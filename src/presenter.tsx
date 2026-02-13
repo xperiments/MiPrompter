@@ -634,6 +634,24 @@ function Presenter() {
     return () => clearTimeout(id);
   }, []);
 
+  // Notify controller when presenter unloads/closes so controller lifecycle remains accurate
+  React.useEffect(() => {
+    const notifyClosed = () => {
+      try {
+        (window.opener || window.parent)?.postMessage?.(
+          { type: 'presenter-unload' },
+          window.location.origin,
+        );
+      } catch (_) {}
+    };
+    window.addEventListener('beforeunload', notifyClosed);
+    window.addEventListener('unload', notifyClosed);
+    return () => {
+      window.removeEventListener('beforeunload', notifyClosed);
+      window.removeEventListener('unload', notifyClosed);
+    };
+  }, []);
+
   // Broadcast state changes back to controller
   React.useEffect(() => {
     if (!state.ready) return;

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { openTeleprompter, type ScreenInfo, type Appearance as PresenterAppearance } from "../lib/presenter";
+import { sendToPresenterViaWs } from "../lib/presenter-transport";
 
 type PresenterState = {
   playing: boolean;
@@ -17,6 +18,7 @@ export function usePresenterBridge() {
   const presenterWindowRef = useRef<Window | null>(null);
   const presenterDisplayedDocRef = useRef<string | null>(null);
   const presenterDisplayedChapterRef = useRef<string | null>(null);
+  const subscribersRef = useRef<Map<string, Set<MessageHandler>>>(new Map());
   const [presenterState, setPresenterState] = useState<PresenterState>({ playing: false, mic: false, windowOpen: false, wordIndex: 0 });
 
   useEffect(() => {
@@ -39,6 +41,19 @@ export function usePresenterBridge() {
       if (e.data?.type === 'presenter-playing') setPresenterState(s => ({ ...s, playing: Boolean(e.data.playing) }));
       if (e.data?.type === 'presenter-mic') setPresenterState(s => ({ ...s, mic: Boolean(e.data.active) }));
       if (e.data?.type === 'presenter-word-index') setPresenterState(s => ({ ...s, wordIndex: Number(e.data.index) }));
+
+      // notify local subscribers (typed handlers registered via `on`)
+      try {
+        const t = e.data?.type;
+        if (t) {
+          const handlers = subscribersRef.current.get(t);
+          if (handlers) {
+            handlers.forEach(h => {
+              try { h(e.data, { origin: e.origin, transport: 'postMessage', source: e.source as MessageEventSource | null }); } catch (_) { /* handler error */ }
+            });
+          }
+        }
+      } catch (_) { /* ignore */ }
     }
     window.addEventListener('message', handlePresenterMessage);
 
@@ -70,24 +85,86 @@ export function usePresenterBridge() {
     }
   }, []);
 
-  const sendToPresenter = useCallback((msg: any) => {
+  type PresenterMessage = { type: string; [key: string]: any };
+  type MessageHandler = (payload: any, meta: { origin: string; transport: 'postMessage' | 'ws'; source?: MessageEventSource | null }) => void;
+
+  const postToPresenter = useCallback((msg: PresenterMessage) => {
     try {
       const w = presenterWindowRef.current;
       if (w && !w.closed) {
         w.postMessage(msg, window.location.origin);
         return true;
       }
-    } catch (_) {}
+    } catch (_) { /* ignore */ }
     return false;
   }, []);
 
+  const send = useCallback((msg: PresenterMessage) => {
+    const ok = postToPresenter(msg);
+    if (ok) return true;
+    try {
+      return Boolean(sendToPresenterViaWs && sendToPresenterViaWs(msg));
+    } catch (_) { return false; }
+  }, [postToPresenter]);
+
+  const play = useCallback(() => send({ type: 'play' }), [send]);
+  const pause = useCallback(() => send({ type: 'pause' }), [send]);
+  const gotoChapter = useCallback((chapterId: string) => send({ type: 'presenter-goto-chapter', chapterId }), [send]);
+  const setWordIndex = useCallback((index: number) => send({ type: 'set-word-index', index }), [send]);
+  const updateParams = useCallback((p: Partial<{ appearance: PresenterAppearance; micDeviceId?: string | null; docId?: string }>) => send({ type: 'set-params', ...p }), [send]);
+
   const togglePlay = useCallback((playing?: boolean) => {
     try {
-      sendToPresenter({ type: 'toggle-play', playing: typeof playing === 'boolean' ? playing : undefined });
-    } catch (err) { /* ignore */ }
-  }, [sendToPresenter]);
+      if (typeof playing === 'boolean') {
+        return playing ? play() : pause();
+      }
+      // fallback: toggle based on last-known state
+      return presenterState.playing ? pause() : play();
+    } catch (_) { return false; }
+  }, [play, pause, presenterState.playing]);
+
+  const closePresenter = useCallback(() => {
+    try {
+      const w = presenterWindowRef.current;
+      if (w && !w.closed) {
+        w.close();
+        presenterWindowRef.current = null;
+        setPresenterState(s => ({ ...s, windowOpen: false }));
+        return true;
+      }
+    } catch (_) { /* ignore */ }
+    presenterWindowRef.current = null;
+    setPresenterState(s => ({ ...s, windowOpen: false }));
+    return false;
+  }, []);
+
+  const on = useCallback((type: string, handler: MessageHandler) => {
+    const map = subscribersRef.current;
+    let set = map.get(type);
+    if (!set) { set = new Set(); map.set(type, set); }
+    set.add(handler);
+    return () => {
+      set!.delete(handler);
+      if (set!.size === 0) map.delete(type);
+    };
+  }, []);
 
   const displayedRefs = { presenterDisplayedDocRef, presenterDisplayedChapterRef } as const;
 
-  return { presenterWindowRef, presenterState, openPresenter, togglePlay, displayedRefs } as const;
+  return {
+    presenterWindowRef,
+    presenterState,
+    openPresenter,
+    send,
+    play,
+    pause,
+    togglePlay,
+    gotoChapter,
+    setWordIndex,
+    updateParams,
+    closePresenter,
+    on,
+    displayedRefs,
+  } as const;
 }
+

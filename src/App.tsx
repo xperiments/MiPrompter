@@ -116,7 +116,14 @@ export default function App() {
     presenterWindowRef,
     presenterState,
     openPresenter,
+    send,
+    play,
+    pause,
     togglePlay,
+    gotoChapter,
+    setWordIndex,
+    updateParams,
+    on,
     displayedRefs,
   } = usePresenterBridge();
   const {
@@ -158,35 +165,38 @@ export default function App() {
         if (opened) {
           // Wait for presenter-ready then request play (best-effort)
           let settled = false;
-          const onMsg = (e: MessageEvent) => {
-            if (e.origin !== window.location.origin) return;
-            if (e.data?.type === "presenter-ready") {
+
+          if (on) {
+            const unsub = on('presenter-ready', () => {
               settled = true;
-              try {
-                opened.postMessage({ type: "play" }, window.location.origin);
-              } catch (_) {}
-              window.removeEventListener("message", onMsg);
-            }
-          };
-          window.addEventListener("message", onMsg);
+              try { play(); } catch (_) {}
+              try { unsub(); } catch (_) {}
+            });
+          } else {
+            const onMsg = (e: MessageEvent) => {
+              if (e.origin !== window.location.origin) return;
+              if (e.data?.type === 'presenter-ready') {
+                settled = true;
+                try { play(); } catch (_) {}
+                window.removeEventListener('message', onMsg);
+              }
+            };
+            window.addEventListener('message', onMsg);
+          }
+
           setTimeout(() => {
-            if (!settled)
-              try {
-                opened?.postMessage({ type: "play" }, window.location.origin);
-              } catch (_) {}
+            if (!settled) try { play(); } catch (_) {}
           }, 700);
         }
       } else {
         try {
-          existing.postMessage({ type: "play" }, window.location.origin);
+          play();
         } catch (_) {}
       }
     } else {
       // stopping microphone — pause presenter (best-effort)
       try {
-        const w = presenterWindowRef.current;
-        if (w && !w.closed)
-          w.postMessage({ type: "pause" }, window.location.origin);
+        pause();
       } catch (_) {}
     }
 
@@ -206,23 +216,13 @@ export default function App() {
     syncedWordIndex,
     (newIndex) => {
       setSyncedWordIndex(newIndex);
-      // Send to presenter
-      if (presenterWindowRef.current) {
-        presenterWindowRef.current.postMessage(
-          { type: "set-word-index", index: newIndex },
-          window.location.origin,
-        );
-      }
+      // Send to presenter via centralized API
+      try { setWordIndex(newIndex); } catch (_) {}
     },
     // restart (document start)
     () => {
       setSyncedWordIndex(0);
-      if (presenterWindowRef.current) {
-        presenterWindowRef.current.postMessage(
-          { type: "prompter-reset" },
-          window.location.origin,
-        );
-      }
+      try { send({ type: 'prompter-reset' }); } catch (_) {}
     },
     // voice-command callbacks — only enable command detection when the *appearance* toggle
     // for Voice Commands is enabled (users expect the toggle to turn commands on/off).
@@ -230,20 +230,12 @@ export default function App() {
       config: presenter.voiceCommands ? voiceCommands : undefined,
       onRetryChapter: (chapterStartWordIndex: number) => {
         setSyncedWordIndex(chapterStartWordIndex);
-        if (presenterWindowRef.current)
-          presenterWindowRef.current.postMessage(
-            { type: "set-word-index", index: chapterStartWordIndex },
-            window.location.origin,
-          );
+        try { setWordIndex(chapterStartWordIndex); } catch (_) {}
       },
       onRestartDocument: () => {
         // alias of the existing restart behavior
         setSyncedWordIndex(0);
-        if (presenterWindowRef.current)
-          presenterWindowRef.current.postMessage(
-            { type: "prompter-reset" },
-            window.location.origin,
-          );
+        try { send({ type: 'prompter-reset' }); } catch (_) {}
       },
     },
   );
@@ -252,15 +244,7 @@ export default function App() {
   // Send `null` when the appearance toggle disables commands so presenter knows commands are OFF.
   React.useEffect(() => {
     try {
-      if (presenterWindowRef.current) {
-        presenterWindowRef.current.postMessage(
-          {
-            type: "presenter-voice-commands",
-            config: presenter.voiceCommands ? voiceCommands : null,
-          },
-          window.location.origin,
-        );
-      }
+      send({ type: 'presenter-voice-commands', config: presenter.voiceCommands ? voiceCommands : null });
     } catch (_) {}
   }, [voiceCommands, presenterState.windowOpen, presenter.voiceCommands]);
   // selectively subscribe instead of receiving many props.
@@ -802,15 +786,7 @@ export default function App() {
       });
 
       setTimeout(() => {
-
-      win?.postMessage(
-        {
-          type: "hold-for-enter",
-
-          rotate: Boolean(presenter?.rotateScreen),
-        },
-        window.location.origin,
-      );
+        try { send({ type: 'hold-for-enter', rotate: Boolean(presenter?.rotateScreen) }); } catch (_) {}
       }, 700);
       return win;
     } catch (err) {
@@ -823,9 +799,7 @@ export default function App() {
     const existing = presenterWindowRef.current;
     if (existing && !existing.closed) {
       try {
-        if (presenterIsPlaying)
-          existing.postMessage({ type: "pause" }, window.location.origin);
-        else existing.postMessage({ type: "play" }, window.location.origin);
+        if (presenterIsPlaying) pause(); else play();
         return;
       } catch (err) {
         /* ignore */
@@ -837,27 +811,29 @@ export default function App() {
     if (!openedWin) return;
 
     let settled = false;
-    function onMsgOnce(e: MessageEvent) {
-      if (e.origin !== window.location.origin) return;
-      if (e.data?.type === "presenter-ready") {
+
+    if (on) {
+      const unsub = on('presenter-ready', () => {
         settled = true;
-        try {
-          openedWin?.postMessage({ type: "play" }, window.location.origin);
-        } catch (err) {
-          /* ignore */
+        try { play(); } catch (_) {}
+        try { unsub(); } catch (_) {}
+      });
+    } else {
+      function onMsgOnce(e: MessageEvent) {
+        if (e.origin !== window.location.origin) return;
+        if (e.data?.type === 'presenter-ready') {
+          settled = true;
+          try { play(); } catch (_) {}
+          window.removeEventListener('message', onMsgOnce);
         }
-        window.removeEventListener("message", onMsgOnce);
       }
+      window.addEventListener('message', onMsgOnce);
     }
-    window.addEventListener("message", onMsgOnce);
+
     // fallback: try to kick-play after a short delay in case presenter doesn't reply
     setTimeout(() => {
       if (settled) return;
-      try {
-        openedWin?.postMessage({ type: "play" }, window.location.origin);
-      } catch (err) {
-        /* ignore */
-      }
+      try { play(); } catch (_) {}
     }, 700);
   }
 
@@ -1019,6 +995,8 @@ export default function App() {
             voiceCommands={voiceCommands}
             setVoiceCommands={setVoiceCommands}
             onOpenTeleprompter={onOpenTeleprompterFromEditor}
+            send={send}
+            on={on}
             // on-device speech helpers (check / install)
             checkSpeechOnDevice={speechControl?.checkOnDevice}
             installSpeechOnDevice={speechControl?.installOnDevice}
@@ -1052,10 +1030,7 @@ export default function App() {
               ) {
                 if (presenterDisplayedDocRef.current === activeDocId) {
                   try {
-                    presenterWindowRef.current.postMessage(
-                      { type: "update-chapter", chapterId, text },
-                      window.location.origin,
-                    );
+                    send({ type: 'update-chapter', chapterId, text });
                   } catch (err) {
                     /* ignore */
                   }
@@ -1078,25 +1053,16 @@ export default function App() {
                     activeDoc
                   ) {
                     try {
-                      presenterWindowRef.current.postMessage(
-                        { type: "presenter-load-doc", doc: activeDoc },
-                        window.location.origin,
-                      );
+                      send({ type: 'presenter-load-doc', doc: activeDoc });
                     } catch (_) {}
                     // small delay to let the presenter process the load-doc message
                     setTimeout(() => {
                       try {
-                        presenterWindowRef.current?.postMessage(
-                          { type: "presenter-goto-chapter", chapterId },
-                          window.location.origin,
-                        );
+                        gotoChapter(chapterId);
                       } catch (_) {}
                     }, 120);
                   } else {
-                    presenterWindowRef.current.postMessage(
-                      { type: "presenter-goto-chapter", chapterId },
-                      window.location.origin,
-                    );
+                    try { gotoChapter(chapterId); } catch (_) {}
                   }
                 } catch (_) {}
                 return;
@@ -1115,10 +1081,7 @@ export default function App() {
                 const win = presenterWindowRef.current;
                 if (win && !win.closed) {
                   try {
-                    win.postMessage(
-                      { type: "presenter-goto-chapter", chapterId },
-                      window.location.origin,
-                    );
+                    gotoChapter(chapterId);
                   } catch (_) {}
                   return;
                 }
@@ -1216,12 +1179,7 @@ export default function App() {
             onToggleMic={handleToggleMic}
             onRestart={() => {
               setSyncedWordIndex(0);
-              if (presenterWindowRef.current) {
-                presenterWindowRef.current.postMessage(
-                  { type: "set-word-index", index: 0 },
-                  window.location.origin,
-                );
-              }
+              try { setWordIndex(0); } catch (_) {}
             }}
           />
         }

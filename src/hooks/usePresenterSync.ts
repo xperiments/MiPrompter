@@ -3,7 +3,9 @@ import type { ScriptDoc, PresenterAppearance } from '../types';
 import { sendToPresenterViaWs } from '../lib/presenter-transport';
 
 export interface UsePresenterSyncParams {
-  presenterWindowRef: React.RefObject<Window | null>;
+  presenterWindowRef?: React.RefObject<Window | null>;
+  /** Optional centralized send API from usePresenterBridge().send */
+  send?: (msg: any) => boolean;
   activeScriptId: string | null;
   scripts: ScriptDoc[];
   presenterDisplayedDocRef?: React.MutableRefObject<string | null>;
@@ -12,37 +14,48 @@ export interface UsePresenterSyncParams {
 
 export function usePresenterSync({
   presenterWindowRef,
+  send,
   activeScriptId,
   scripts,
   presenterDisplayedDocRef,
   presenterDisplayedChapterRef,
 }: UsePresenterSyncParams) {
-  // Sync active document to presenter window — support both postMessage and WS transport
+  // Sync active document to presenter window — support both centralized send, postMessage and WS transport
   useEffect(() => {
-    const win = presenterWindowRef.current;
+    const win = presenterWindowRef?.current ?? null;
     const origin = window.location.origin;
     const activeDoc = scripts.find((s) => s.id === activeScriptId) ?? null;
 
     const msgLoad = { type: 'presenter-load-doc', doc: activeDoc };
     const msgParams = { type: 'set-params', docId: activeScriptId };
 
-    // If we have a local presenter window, send via postMessage
-    if (activeScriptId && win && !win.closed) {
+    // Preferred: use centralized `send` when available
+    if (send) {
       try {
-        win.postMessage(msgLoad, origin);
-        win.postMessage(msgParams, origin);
-      } catch {
+        send(msgLoad);
+        send(msgParams);
+      } catch (_) {
         /* ignore */
       }
-    }
+    } else {
+      // If we have a local presenter window, send via postMessage
+      if (activeScriptId && win && !win.closed) {
+        try {
+          win.postMessage(msgLoad, origin);
+          win.postMessage(msgParams, origin);
+        } catch {
+          /* ignore */
+        }
+      }
 
-    // Also attempt WS transport (covers phone presenters and remote clients)
-    try {
-      // sendToPresenterViaWs returns false if no WS transport registered
-      sendToPresenterViaWs(msgLoad);
-      sendToPresenterViaWs(msgParams);
-    } catch (_) {
-      /* ignore */
+      // Also attempt WS transport (covers phone presenters and remote clients)
+      try {
+        // sendToPresenterViaWs returns false if no WS transport registered
+        sendToPresenterViaWs(msgLoad);
+        sendToPresenterViaWs(msgParams);
+      } catch (_) {
+        /* ignore */
+      }
     }
 
     if (presenterDisplayedDocRef && activeScriptId) {
@@ -51,7 +64,7 @@ export function usePresenterSync({
     if (presenterDisplayedChapterRef && activeDoc?.chapters?.[0]) {
       presenterDisplayedChapterRef.current = activeDoc.chapters[0].id;
     }
-  }, [activeScriptId, scripts, presenterWindowRef, presenterDisplayedDocRef, presenterDisplayedChapterRef]);
+  }, [activeScriptId, scripts, presenterWindowRef, presenterDisplayedDocRef, presenterDisplayedChapterRef, send]);
 }
 
 export function updatePresenterWindow(

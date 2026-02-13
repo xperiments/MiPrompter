@@ -40,6 +40,15 @@ export interface SidebarProps {
   presenterWindowRef?: React.MutableRefObject<Window | null>;
   presenterDisplayedDocRef?: React.MutableRefObject<string | null>;
   presenterDisplayedChapterRef?: React.MutableRefObject<string | null>;
+  send?: (msg: any) => boolean;
+  /**
+   * Subscribe to presenter messages forwarded by the centralized hook (`usePresenterBridge().on`).
+   * Handler receives (payload, meta) where meta.transport is 'postMessage' | 'ws'.
+   */
+  on?: (
+    type: string,
+    handler: (payload: any, meta?: { origin: string; transport: 'postMessage' | 'ws' }) => void,
+  ) => () => void;
   // helper to open the teleprompter window when the UI needs it
   onOpenTeleprompter?: () => void;
   // controller-side presenter runtime state (passed from App)
@@ -149,6 +158,7 @@ export function Sidebar(props: SidebarProps) {
   // Sync presenter with active script
   usePresenterSync({
     presenterWindowRef: props.presenterWindowRef ?? { current: null },
+    send: props.send,
     activeScriptId: props.activeScriptId,
     scripts: props.scripts,
     presenterDisplayedDocRef: props.presenterDisplayedDocRef,
@@ -250,14 +260,7 @@ export function Sidebar(props: SidebarProps) {
               win.resizeTo(screenInfo.width, screenInfo.height);
               setTimeout(() => {
                 win.focus?.();
-                win.postMessage(
-                  {
-                    type: "hold-for-enter",
-                    screen: screenInfo,
-                    rotate: Boolean(presenter?.rotateScreen),
-                  },
-                  window.location.origin,
-                );
+                try { props.send?.({ type: 'hold-for-enter', screen: screenInfo, rotate: Boolean(presenter?.rotateScreen) }); } catch (_) {}
               }, 500);
               setLastDevice(id);
             }, 500);
@@ -284,14 +287,7 @@ export function Sidebar(props: SidebarProps) {
           localStorage.setItem("smui.voiceCommands.v1", JSON.stringify(next));
         } catch (_) {}
         // Notify presenter window (non-fatal)
-        try {
-          props.presenterWindowRef?.current?.postMessage(
-            { type: "presenter-voice-commands", config: next },
-            window.location.origin,
-          );
-        } catch (_) {}
-        try {
-        } catch (_) {}
+        try { props.send?.({ type: 'presenter-voice-commands', config: next }); } catch (_) {}
       } catch (_) {}
     },
     [props.setVoiceCommands, props.voiceCommands, props.presenterWindowRef],
@@ -550,6 +546,7 @@ export function Sidebar(props: SidebarProps) {
               presenterWindowRef={props.presenterWindowRef}
               onOpenTeleprompter={props.onOpenTeleprompter}
               screens={screens}
+              on={props.on}
             />
           </div>
         </div>
@@ -945,10 +942,12 @@ function PairedDeviceList({
   presenterWindowRef,
   onOpenTeleprompter,
   screens,
+  on,
 }: {
   presenterWindowRef?: React.MutableRefObject<Window | null>;
   onOpenTeleprompter?: () => void;
   screens?: ReturnType<typeof useScreenDetection>;
+  on?: (type: string, handler: (payload: any, meta?: any) => void) => () => void;
 }) {
   type Paired = {
     id: string;
@@ -1050,71 +1049,43 @@ function PairedDeviceList({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Listen for presenter -> app postMessage invites to share to the paired phone.
-  // Presenter posts: { type: 'presenter-share-invite', room }
+  // Listen for presenter -> app 'presenter-share-invite' messages and forward to paired phone.
+  // Prefer centralized subscription via props.on when available; fall back to window 'message'.
   useEffect(() => {
-    function onWindowMessage(e: MessageEvent) {
-      console.log(
-        "[Sidebar] postMessage received:",
-        e.data?.type,
-        "origin:",
-        e.origin,
-        "expected:",
-        window.location.origin,
-      );
-      if (e.origin !== window.location.origin) return;
-      const data = e.data || {};
-      if (
-        data?.type === "presenter-share-invite" &&
-        typeof data.room === "string"
-      ) {
-        console.log(
-          "[Sidebar] presenter-share-invite received, room:",
-          data.room,
-        );
-        try {
-          const phoneId = paired[0]?.id;
-          const ws = wsRef.current;
-          console.log(
-            "[Sidebar] phoneId:",
-            phoneId,
-            "wsState:",
-            ws?.readyState,
-            "paired:",
-            paired,
-          );
-          if (phoneId && ws && ws.readyState === 1) {
-            ws.send(
-              JSON.stringify({
-                type: "presenter-share-invite",
-                to: phoneId,
-                room: data.room,
-              }),
-            );
-            console.log(
-              "[Sidebar] sent presenter-share-invite to phone:",
-              phoneId,
-            );
-          } else {
-            console.warn(
-              "[Sidebar] Cannot send invite - phoneId:",
-              phoneId,
-              "wsState:",
-              ws?.readyState,
-            );
-          }
-        } catch (err) {
-          console.error("[Sidebar] Error sending invite:", err);
+    const handleInvite = (data: any) => {
+      if (!data || typeof data.room !== 'string') return;
+      console.log('[Sidebar] presenter-share-invite received, room:', data.room);
+      try {
+        const phoneId = paired[0]?.id;
+        const ws = wsRef.current;
+        console.log('[Sidebar] phoneId:', phoneId, 'wsState:', ws?.readyState, 'paired:', paired);
+        if (phoneId && ws && ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'presenter-share-invite', to: phoneId, room: data.room }));
+          console.log('[Sidebar] sent presenter-share-invite to phone:', phoneId);
+        } else {
+          console.warn('[Sidebar] Cannot send invite - phoneId:', phoneId, 'wsState:', ws?.readyState);
         }
+      } catch (err) {
+        console.error('[Sidebar] Error sending invite:', err);
       }
-    }
-    window.addEventListener("message", onWindowMessage);
-    console.log("[Sidebar] Message listener added");
-    return () => {
-      window.removeEventListener("message", onWindowMessage);
-      console.log("[Sidebar] Message listener removed");
     };
-  }, [paired]);
+
+    if (on) {
+      // subscribe via centralized hook
+      const unsub = on('presenter-share-invite', (payload: any) => {
+        try { handleInvite(payload); } catch (_) {}
+      });
+      return () => unsub();
+    }
+
+    // fallback: listen to window.postMessage
+    function onWindowMessage(e: MessageEvent) {
+      if (e.origin !== window.location.origin) return;
+      handleInvite(e.data || {});
+    }
+    window.addEventListener('message', onWindowMessage);
+    return () => window.removeEventListener('message', onWindowMessage);
+  }, [paired, on]);
 
   const generatePairUrl = () => {
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
