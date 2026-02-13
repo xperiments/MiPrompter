@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root{
+  --bg-0: #0f0f10;
+  --bg-1: #1a1b1d;
+  --bg-2: #222326;
+  --bg-3: #2a2b2f;
+  --line: rgba(255,255,255,.08);
+  --line2: rgba(255,255,255,.12);
+  --text: rgba(255,255,255,.92);
+  --muted: rgba(255,255,255,.62);
+  --muted2: rgba(255,255,255,.45);
+  --accent: #2e66ff;
+}
+
+*{ box-sizing: border-box; }
+html, body { height: 100%; }
+body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Apple Color Emoji","Segoe UI Emoji"; }
+
+::-webkit-scrollbar{ width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb{ background: rgba(255,255,255,.12); border-radius: 999px; }
+::-webkit-scrollbar-track{ background: transparent; }
+
+/* crisp UI edges (Windows-ish) */
+.ui-panel{
+  background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+  border: 1px solid var(--line);
+}
+
+.ui-inset{
+  background: rgba(0,0,0,.28);
+  border: 1px solid var(--line);
+}

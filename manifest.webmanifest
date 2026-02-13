@@ -1,0 +1,20 @@
+{
+  "name": "Script Manager — Teleprompter",
+  "short_name": "Prompter",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b1020",
+  "theme_color": "#0b1020",
+  "icons": [
+    { "src": "/favicon.ico", "sizes": "64x64", "type": "image/x-icon" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Pair teleprompter",
+      "short_name": "Pair",
+      "description": "Open pairing page for remote control",
+      "url": "/pair.html",
+      "icons": [{ "src": "/favicon.ico", "sizes": "64x64" }]
+    }
+  ]
+}
