@@ -42,7 +42,7 @@ export type Appearance = {
 
     // overlay controls
     showOverlay?: boolean;
-    overlayShape?: 'camera' | 'circle' | 'cross' | 'snap' | 'square';
+    overlayShape?: "camera" | "circle" | "cross" | "snap" | "square";
     overlayColor?: string;
     overlayOpacity?: number;
     overlayPosX?: number;
@@ -88,7 +88,7 @@ type PresenterInitMessage = {
 
     // overlay controls
     showOverlay?: boolean;
-    overlayShape?: 'camera' | 'circle' | 'cross' | 'snap' | 'square';
+    overlayShape?: "camera" | "circle" | "cross" | "snap" | "square";
     overlayColor?: string;
     overlayOpacity?: number;
     overlayPosX?: number;
@@ -101,40 +101,47 @@ const defaultPresenterAppearance = {
   lineSpacing: 140,
   activeLinePosition: 35,
   // centerline defaults
-  showCenterline: true,
+  showCenterline: false,
   activeLineGuideHeight: 2,
   paragraphSpacing: 0.5,
   alignment: "center" as const,
   // default font
-  fontFamily: 'Inter',
+  fontFamily: "Inter",
   // no default camera
   videoDeviceId: undefined,
-  highlightActiveWord: false,
+  highlightActiveWord: true,
   mirrorMode: false,
   voiceCommands: false,
   rotateScreen: false,
-  preserveFormatting: false,
+  preserveFormatting: true,
   smoothAnimations: false,
   showStopSigns: false,
   // overlay defaults
   showOverlay: false,
-  overlayShape: 'snap' as const,
-  overlayColor: '#2563eb',
+  overlayShape: "snap" as const,
+  overlayColor: "#2563eb",
   overlayOpacity: 80,
   overlayPosX: 50,
   overlayPosY: 60,
 };
 
-function normalizePresenterAppearance(p?: Appearance["presenter"]): PresenterInitMessage["appearance"] {
+function normalizePresenterAppearance(
+  p?: Appearance["presenter"],
+): PresenterInitMessage["appearance"] {
   return {
     fontSize: p?.fontSize,
     sideMargins: p?.sideMargins ?? defaultPresenterAppearance.sideMargins,
     lineSpacing: p?.lineSpacing ?? defaultPresenterAppearance.lineSpacing,
-    activeLinePosition: p?.activeLinePosition ?? defaultPresenterAppearance.activeLinePosition,
+    activeLinePosition:
+      p?.activeLinePosition ?? defaultPresenterAppearance.activeLinePosition,
     // centerline controls
-    showCenterline: p?.showCenterline ?? defaultPresenterAppearance.showCenterline,
-    activeLineGuideHeight: p?.activeLineGuideHeight ?? defaultPresenterAppearance.activeLineGuideHeight,
-    paragraphSpacing: p?.paragraphSpacing ?? defaultPresenterAppearance.paragraphSpacing,
+    showCenterline:
+      p?.showCenterline ?? defaultPresenterAppearance.showCenterline,
+    activeLineGuideHeight:
+      p?.activeLineGuideHeight ??
+      defaultPresenterAppearance.activeLineGuideHeight,
+    paragraphSpacing:
+      p?.paragraphSpacing ?? defaultPresenterAppearance.paragraphSpacing,
     // font
     fontFamily: p?.fontFamily ?? defaultPresenterAppearance.fontFamily,
     // video input (deviceId) — undefined means None
@@ -148,13 +155,24 @@ function normalizePresenterAppearance(p?: Appearance["presenter"]): PresenterIni
     smoothAnimations: Boolean(p?.smoothAnimations),
     showStopSigns: Boolean(p?.showStopSigns),
     // overlays
-    showOverlay: Boolean(p?.showOverlay ?? defaultPresenterAppearance.showOverlay),
-    overlayShape: (p?.overlayShape as any) ?? defaultPresenterAppearance.overlayShape,
+    showOverlay: Boolean(
+      p?.showOverlay ?? defaultPresenterAppearance.showOverlay,
+    ),
+    overlayShape:
+      (p?.overlayShape as any) ?? defaultPresenterAppearance.overlayShape,
     overlayColor: p?.overlayColor ?? defaultPresenterAppearance.overlayColor,
-    overlayOpacity: typeof p?.overlayOpacity === 'number' ? p!.overlayOpacity : defaultPresenterAppearance.overlayOpacity,
-    overlayPosX: typeof p?.overlayPosX === 'number' ? p!.overlayPosX : defaultPresenterAppearance.overlayPosX,
-    overlayPosY: typeof p?.overlayPosY === 'number' ? p!.overlayPosY : defaultPresenterAppearance.overlayPosY,
-
+    overlayOpacity:
+      typeof p?.overlayOpacity === "number"
+        ? p!.overlayOpacity
+        : defaultPresenterAppearance.overlayOpacity,
+    overlayPosX:
+      typeof p?.overlayPosX === "number"
+        ? p!.overlayPosX
+        : defaultPresenterAppearance.overlayPosX,
+    overlayPosY:
+      typeof p?.overlayPosY === "number"
+        ? p!.overlayPosY
+        : defaultPresenterAppearance.overlayPosY,
   };
 }
 
@@ -171,13 +189,10 @@ function openOnScreen(opts: OpenOpts, url: string): Window | null {
   const top = Math.round(s.top ?? 0);
 
   const features =
-    opts.features ?? `left=${left},top=${top},width=${w},height=${h},menubar=no,toolbar=no,location=no`;
+    opts.features ??
+    `left=${left},top=${top},width=${w},height=${h},menubar=no,toolbar=no,location=no`;
 
-  try {
-    return window.open(url, opts.windowName ?? "xteleprompter", features);
-  } catch {
-    return null;
-  }
+  return window.open(url, opts.windowName ?? "xteleprompter", features);
 }
 
 /**
@@ -195,20 +210,14 @@ export function openTeleprompter(opts: OpenOpts): Window | null {
   const win = openOnScreen(opts, url);
   if (!win) return null;
 
-  try {
-    if (opts.presenterWindowRef) opts.presenterWindowRef.current = win;
-  } catch {
-    /* ignore */
-  }
+  if (opts.presenterWindowRef) opts.presenterWindowRef.current = win;
 
   // focus best effort
-  try {
-    win.focus?.();
-  } catch {}
+
+  win.focus?.();
+
   setTimeout(() => {
-    try {
-      win.focus?.();
-    } catch {}
+    win.focus?.();
   }, 50);
 
   const origin = window.location.origin;
@@ -223,18 +232,14 @@ export function openTeleprompter(opts: OpenOpts): Window | null {
   };
 
   const sendInit = () => {
-    try {
-      win.postMessage(initMsg, origin);
-    } catch {
-      /* ignore */
-    }
+    win.postMessage(initMsg, origin);
   };
 
   // attempt #1: immediate (same gesture)
   sendInit();
 
   // attempt #2: when presenter signals readiness
-  let settled = false;
+  const settled = false;
 
   const onMsg = (e: MessageEvent) => {
     if (e.origin !== origin) return;
@@ -243,7 +248,7 @@ export function openTeleprompter(opts: OpenOpts): Window | null {
 
     sendInit();
     window.removeEventListener("message", onMsg);
-  };  
+  };
 
   window.addEventListener("message", onMsg);
 
@@ -254,9 +259,8 @@ export function openTeleprompter(opts: OpenOpts): Window | null {
   }, 700);
 
   // Optional: explicit doc load (often redundant if initMsg includes doc)
-  try {
-    if (doc) win.postMessage({ type: "presenter-load-doc", doc }, origin);
-  } catch {}
+
+  if (doc) win.postMessage({ type: "presenter-load-doc", doc }, origin);
 
   return win;
 }

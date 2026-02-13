@@ -18,12 +18,37 @@
     "tailwindcss": "^3.4.10",
     "typescript": "^5.5.4",
     "vite": "^5.4.2",
-    "ws": "^8.13.0"
+    "ws": "^8.13.0",
+    "eslint": "^8.46.0",
+    "@typescript-eslint/parser": "^6.11.0",
+    "@typescript-eslint/eslint-plugin": "^6.11.0",
+    "eslint-plugin-react-hooks": "^4.6.0"
   },
   "scripts": {
     "dev": "vite --host",
     "dev:with-ws": "vite --host",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint": "eslint \"src/**/*.{ts,tsx,js,jsx}\" --ext .ts,.tsx --fix"
+  },
+  "eslintConfig": {
+    "root": true,
+    "parser": "@typescript-eslint/parser",
+    "parserOptions": {
+      "ecmaVersion": 2020,
+      "sourceType": "module",
+      "ecmaFeatures": { "jsx": true }
+    },
+    "plugins": ["@typescript-eslint", "react-hooks"],
+    "extends": [
+      "eslint:recommended",
+      "plugin:@typescript-eslint/recommended"
+    ],
+    "rules": {
+      "no-empty": ["error", { "allowEmptyCatch": false }],
+      "no-useless-catch": "error",
+      "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
+      "react-hooks/exhaustive-deps": "warn"
+    }
   }
 } 

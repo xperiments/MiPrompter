@@ -10,15 +10,14 @@ import type { ScriptDoc, AppearanceSettings } from "../types";
 import { SidebarSection } from "./sidebar/SidebarSection";
 import { Select } from "./ui/Select";
 import { SliderRow } from "./ui/SliderRow";
-import { Segmented } from "./ui/Segmented";
-import Icon from "./Icon";
-import { Toggle } from "./ui/Toggle";
+
 import { ToggleRow } from "./ui/ToggleRow";
 import { ScriptList } from "./sidebar/ScriptList";
 import { useUiStore } from "../stores/ui";
 import { useScreenDetection } from "../hooks/useScreenDetection";
 import { useMicrophoneDetection } from "../hooks/useMicrophoneDetection";
 import { useCameraDetection } from "../hooks/useCameraDetection";
+import { useLocalStorage } from "../hooks/useLocalStorage";
 import {
   usePresenterSync,
   updatePresenterWindow,
@@ -40,19 +39,30 @@ export interface SidebarProps {
   presenterWindowRef?: React.MutableRefObject<Window | null>;
   presenterDisplayedDocRef?: React.MutableRefObject<string | null>;
   presenterDisplayedChapterRef?: React.MutableRefObject<string | null>;
-  send?: (msg: any) => boolean;
+  // lightweight presenter message shape
+  send?: (msg: { type: string; [k: string]: unknown }) => boolean;
   /**
    * Subscribe to presenter messages forwarded by the centralized hook (`usePresenterBridge().on`).
    * Handler receives (payload, meta) where meta.transport is 'postMessage' | 'ws'.
    */
   on?: (
     type: string,
-    handler: (payload: any, meta?: { origin: string; transport: 'postMessage' | 'ws' }) => void,
+    handler: (
+      payload: unknown,
+      meta?: { origin: string; transport: "postMessage" | "ws" },
+    ) => void,
   ) => () => void;
   // helper to open the teleprompter window when the UI needs it
   onOpenTeleprompter?: () => void;
   // controller-side presenter runtime state (passed from App)
-  presenterState?: any;
+  presenterState?:
+    | {
+        playing?: boolean;
+        mic?: boolean;
+        windowOpen?: boolean;
+        wordIndex?: number;
+      }
+    | undefined;
   // speech / voice command config (controlled by App)
   speechLanguage?: string;
   onSpeechLanguageChange?: (lang: string) => void;
@@ -68,31 +78,20 @@ export interface SidebarProps {
     retry: string;
     restart: string;
   } | null;
-  setVoiceCommands?: (v: any) => void;
+  setVoiceCommands?: (v: SidebarProps["voiceCommands"] | null) => void;
 }
 
 export function Sidebar(props: SidebarProps) {
-  const patchAppearance = useUiStore((state: any) => state.patchAppearance);
+  const patchAppearance = useUiStore((state) => state.patchAppearance);
   const [lastDevice, setLastDevice] = React.useState<string | null>(null);
   // Custom hooks for device management
   const screens = useScreenDetection();
   const mics = useMicrophoneDetection();
   const cams = useCameraDetection();
+  const ls = useLocalStorage();
 
   // UI hint from presenter (transient)
-  const [presenterStatus, setPresenterStatus] = React.useState<string | null>(
-    null,
-  );
-  const presenterStatusTimer = React.useRef<number | null>(null);
-  const showPresenterStatus = (txt: string, timeout = 3500) => {
-    setPresenterStatus(txt);
-    if (presenterStatusTimer.current)
-      window.clearTimeout(presenterStatusTimer.current);
-    presenterStatusTimer.current = window.setTimeout(
-      () => setPresenterStatus(null),
-      timeout,
-    );
-  };
+  const presenterStatus = React.useState<string | null>(null)[0];
 
   // on-device language install UI
   const [installingLang, setInstallingLang] = React.useState(false);
@@ -148,11 +147,9 @@ export function Sidebar(props: SidebarProps) {
 
   // Allow other UI to request a sidebar section to open (used when selecting devices)
   const openSidebarSection = (title: string) => {
-    try {
-      window.dispatchEvent(
-        new CustomEvent("smui.open-sidebar-section", { detail: { title } }),
-      );
-    } catch (_) {}
+    window.dispatchEvent(
+      new CustomEvent("smui.open-sidebar-section", { detail: { title } }),
+    );
   };
 
   // Sync presenter with active script
@@ -167,17 +164,10 @@ export function Sidebar(props: SidebarProps) {
 
   // Memoize presenter config from localStorage
   const presenter = useMemo(() => {
-    try {
-      const stored = localStorage.getItem("smui.appearance.v1");
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        return parsed.presenter || {};
-      }
-    } catch {
-      // Ignore
-    }
+    const stored = ls.getJSON<Record<string, any>>("smui.appearance.v1", null);
+    if (stored) return stored.presenter || {};
     return props.appearance?.presenter || {};
-  }, [props.appearance]);
+  }, [props.appearance, ls]);
 
   // Local preview state for sliders that need immediate, optimistic feedback
   // (avoids relying on props.appearance update + localStorage during drag).
@@ -260,13 +250,19 @@ export function Sidebar(props: SidebarProps) {
               win.resizeTo(screenInfo.width, screenInfo.height);
               setTimeout(() => {
                 win.focus?.();
-                try { props.send?.({ type: 'hold-for-enter', screen: screenInfo, rotate: Boolean(presenter?.rotateScreen) }); } catch (_) {}
+                props.send?.({
+                  type: "hold-for-enter",
+                  screen: screenInfo,
+                  rotate: Boolean(presenter?.rotateScreen),
+                });
               }, 500);
               setLastDevice(id);
             }, 500);
           }, 500);
         }
-      } catch (_) {}
+      } catch (err) {
+        console.warn("[Sidebar] handleSelectScreen failed", err);
+      }
     },
     [
       screens,
@@ -279,18 +275,16 @@ export function Sidebar(props: SidebarProps) {
 
   // Persist & propagate voice-command changes (called by the inputs below)
   const handleVoiceCommandsChange = React.useCallback(
-    (patch: Partial<any>) => {
-      try {
-        const next = { ...(props.voiceCommands ?? {}), ...patch };
-        props.setVoiceCommands?.(next);
-        try {
-          localStorage.setItem("smui.voiceCommands.v1", JSON.stringify(next));
-        } catch (_) {}
-        // Notify presenter window (non-fatal)
-        try { props.send?.({ type: 'presenter-voice-commands', config: next }); } catch (_) {}
-      } catch (_) {}
+    (patch: Partial<NonNullable<SidebarProps["voiceCommands"]>>) => {
+      const next = { ...(props.voiceCommands ?? {}), ...patch };
+      props.setVoiceCommands?.(next);
+
+      ls.setJSON("smui.voiceCommands.v1", next);
+
+      // Notify presenter window (non-fatal)
+      props.send?.({ type: "presenter-voice-commands", config: next });
     },
-    [props.setVoiceCommands, props.voiceCommands, props.presenterWindowRef],
+    [props.setVoiceCommands, props.voiceCommands, props.presenterWindowRef, ls],
   );
 
   // language options shared between the Select and the status list
@@ -439,7 +433,7 @@ export function Sidebar(props: SidebarProps) {
   // Export scripts handler
   const handleExportScripts = useCallback(async () => {
     try {
-      const raw = localStorage.getItem("smui.scripts.v1") ?? "[]";
+      const raw = ls.getRaw("smui.scripts.v1") ?? "[]";
       const blob = new Blob([raw], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -453,7 +447,7 @@ export function Sidebar(props: SidebarProps) {
       console.error(err);
       alert("Failed to export scripts");
     }
-  }, []);
+  }, [ls]);
 
   // Import scripts handler
   const handleImportScripts = useCallback(
@@ -463,24 +457,20 @@ export function Sidebar(props: SidebarProps) {
 
       try {
         const txt = await f.text();
-        const parsed = JSON.parse(txt) as any;
+        const parsed = JSON.parse(txt) as ScriptDoc[];
         if (!Array.isArray(parsed)) throw new Error("Invalid script file");
 
-        localStorage.setItem("smui.scripts.v1", JSON.stringify(parsed));
+        ls.setJSON("smui.scripts.v1", parsed);
 
-        try {
-          const { idbSet } = await import("../lib/db");
-          await idbSet("smui.scripts.v1", parsed);
-        } catch {
-          // Ignore IDB errors
-        }
+        const { idbSet } = await import("../lib/db");
+        await idbSet("smui.scripts.v1", parsed);
 
         window.location.reload();
       } catch {
         alert("Invalid script file");
       }
     },
-    [],
+    [ls],
   );
 
   // Appearance change handlers
@@ -573,11 +563,7 @@ export function Sidebar(props: SidebarProps) {
             <div
               className="flex-1"
               onMouseDown={() => {
-                try {
-                  if (mics?.permission === "prompt") mics.requestPermission();
-                } catch (err) {
-                  console.error("useMicrophoneDetection failed:", err);
-                }
+                if (mics?.permission === "prompt") mics.requestPermission();
               }}
             >
               {mics ? (
@@ -735,28 +721,22 @@ export function Sidebar(props: SidebarProps) {
                   const next = v || undefined;
 
                   // surface Display Options when the user picks a camera
-                  try {
-                    openSidebarSection("Display Options");
-                  } catch (_) {}
+                  openSidebarSection("Display Options");
 
                   // optimistic preview + immediate presenter update (fast-path)
                   setPresenterPreview((p) => ({
                     ...(p || {}),
                     videoDeviceId: next,
                   }));
-                  try {
-                    if (props.presenterWindowRef)
-                      updatePresenterWindow(props.presenterWindowRef, {
-                        videoDeviceId: next,
-                        ...(next
-                          ? { showOverlay: true, overlayShape: "camera" }
-                          : {}),
-                      });
-                  } catch (_) {}
+                  if (props.presenterWindowRef)
+                    updatePresenterWindow(props.presenterWindowRef, {
+                      videoDeviceId: next,
+                      ...(next
+                        ? { showOverlay: true, overlayShape: "camera" }
+                        : {}),
+                    });
 
-                  try {
-                    cams.setSelectedCameraId(v || null);
-                  } catch (_) {}
+                  cams.setSelectedCameraId(v || null);
 
                   // persist + enable overlay when selecting a camera
                   updatePresenterAppearance({
@@ -803,7 +783,7 @@ export function Sidebar(props: SidebarProps) {
             <Select
               value={presenter.overlayShape ?? "snap"}
               onChange={(v) =>
-                updatePresenterAppearance({ overlayShape: v as any })
+                updatePresenterAppearance({ overlayShape: v as string })
               }
               options={[
                 { value: "camera", label: "Camera" },
@@ -947,7 +927,13 @@ function PairedDeviceList({
   presenterWindowRef?: React.MutableRefObject<Window | null>;
   onOpenTeleprompter?: () => void;
   screens?: ReturnType<typeof useScreenDetection>;
-  on?: (type: string, handler: (payload: any, meta?: any) => void) => () => void;
+  on?: (
+    type: string,
+    handler: (
+      payload: unknown,
+      meta?: { origin: string; transport: "postMessage" | "ws" },
+    ) => void,
+  ) => () => void;
 }) {
   type Paired = {
     id: string;
@@ -971,13 +957,13 @@ function PairedDeviceList({
   useEffect(() => {
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${proto}//${location.host}/ws`;
-    let ws: WebSocket;
+    let ws: WebSocket | null = null;
     try {
       ws = new WebSocket(wsUrl);
       console.log("[Sidebar] Creating WebSocket:", wsUrl);
     } catch (err) {
       console.error("[Sidebar] WebSocket creation failed:", err);
-      ws = null as any;
+      ws = null;
     }
     wsRef.current = ws;
 
@@ -988,32 +974,29 @@ function PairedDeviceList({
     });
 
     ws.addEventListener("message", (ev) => {
-      try {
-        const msg = JSON.parse(ev.data);
-        if (msg?.type === "pair-request" && msg.id) {
-          const id = String(msg.id);
-          const info = msg.info || {};
-          const label =
-            info?.name ||
-            (info?.ua ? info.ua.split(" ")[0] : `Device ${id.slice(0, 4)}`);
-          // Only keep a single paired device — replace any existing pairing with the newest
-          const next: Paired[] = [
-            {
-              id,
-              label,
-              ua: info?.ua,
-              screen: info?.screen,
-              createdAt: Date.now(),
-              lastSeen: Date.now(),
-            },
-          ];
-          save(next);
-          // send pair-ack so the phone knows it's paired
-          try {
-            ws.send(JSON.stringify({ type: "pair-ack", id }));
-          } catch (_) {}
-        }
-      } catch (_) {}
+      const msg = JSON.parse(ev.data);
+      if (msg?.type === "pair-request" && msg.id) {
+        const id = String(msg.id);
+        const info = msg.info || {};
+        const label =
+          info?.name ||
+          (info?.ua ? info.ua.split(" ")[0] : `Device ${id.slice(0, 4)}`);
+        // Only keep a single paired device — replace any existing pairing with the newest
+        const next: Paired[] = [
+          {
+            id,
+            label,
+            ua: info?.ua,
+            screen: info?.screen,
+            createdAt: Date.now(),
+            lastSeen: Date.now(),
+          },
+        ];
+        save(next);
+        // send pair-ack so the phone knows it's paired
+
+        ws.send(JSON.stringify({ type: "pair-ack", id }));
+      }
     });
 
     ws.addEventListener("close", () => {
@@ -1028,22 +1011,19 @@ function PairedDeviceList({
     });
 
     return () => {
-      try {
-        // Only close if WebSocket is open or connecting (don't trigger error if already closed)
-        if (
-          ws &&
-          (ws.readyState === WebSocket.OPEN ||
-            ws.readyState === WebSocket.CONNECTING)
-        ) {
-          console.log(
-            "[Sidebar] Cleanup: closing WebSocket, state:",
-            ws.readyState,
-          );
-          ws.close();
-        }
-      } catch (err) {
-        console.warn("[Sidebar] Cleanup error:", err);
+      // Only close if WebSocket is open or connecting (don't trigger error if already closed)
+      if (
+        ws &&
+        (ws.readyState === WebSocket.OPEN ||
+          ws.readyState === WebSocket.CONNECTING)
+      ) {
+        console.log(
+          "[Sidebar] Cleanup: closing WebSocket, state:",
+          ws.readyState,
+        );
+        ws.close();
       }
+
       wsRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1052,30 +1032,48 @@ function PairedDeviceList({
   // Listen for presenter -> app 'presenter-share-invite' messages and forward to paired phone.
   // Prefer centralized subscription via props.on when available; fall back to window 'message'.
   useEffect(() => {
-    const handleInvite = (data: any) => {
-      if (!data || typeof data.room !== 'string') return;
-      console.log('[Sidebar] presenter-share-invite received, room:', data.room);
-      try {
-        const phoneId = paired[0]?.id;
-        const ws = wsRef.current;
-        console.log('[Sidebar] phoneId:', phoneId, 'wsState:', ws?.readyState, 'paired:', paired);
-        if (phoneId && ws && ws.readyState === 1) {
-          ws.send(JSON.stringify({ type: 'presenter-share-invite', to: phoneId, room: data.room }));
-          console.log('[Sidebar] sent presenter-share-invite to phone:', phoneId);
-        } else {
-          console.warn('[Sidebar] Cannot send invite - phoneId:', phoneId, 'wsState:', ws?.readyState);
-        }
-      } catch (err) {
-        console.error('[Sidebar] Error sending invite:', err);
+    const handleInvite = (data: unknown) => {
+      if (!data || typeof data !== "object" || data === null) return;
+      const rec = data as Record<string, unknown>;
+      if (typeof rec.room !== "string") return;
+      const room = rec.room;
+      console.log("[Sidebar] presenter-share-invite received, room:", room);
+
+      const phoneId = paired[0]?.id;
+      const ws = wsRef.current;
+      console.log(
+        "[Sidebar] phoneId:",
+        phoneId,
+        "wsState:",
+        ws?.readyState,
+        "paired:",
+        paired,
+      );
+      if (phoneId && ws && ws.readyState === 1) {
+        ws.send(
+          JSON.stringify({
+            type: "presenter-share-invite",
+            to: phoneId,
+            room,
+          }),
+        );
+        console.log("[Sidebar] sent presenter-share-invite to phone:", phoneId);
+      } else {
+        console.warn(
+          "[Sidebar] Cannot send invite - phoneId:",
+          phoneId,
+          "wsState:",
+          ws?.readyState,
+        );
       }
     };
 
     if (on) {
       // subscribe via centralized hook
-      const unsub = on('presenter-share-invite', (payload: any) => {
-        try { handleInvite(payload); } catch (_) {}
-      });
-      return () => unsub();
+      const unsub = on("presenter-share-invite", (payload: unknown) =>
+        handleInvite(payload),
+      );
+      return unsub;
     }
 
     // fallback: listen to window.postMessage
@@ -1083,8 +1081,8 @@ function PairedDeviceList({
       if (e.origin !== window.location.origin) return;
       handleInvite(e.data || {});
     }
-    window.addEventListener('message', onWindowMessage);
-    return () => window.removeEventListener('message', onWindowMessage);
+    window.addEventListener("message", onWindowMessage);
+    return () => window.removeEventListener("message", onWindowMessage);
   }, [paired, on]);
 
   const generatePairUrl = () => {
@@ -1101,54 +1099,42 @@ function PairedDeviceList({
       .catch(() => setQrDataUrl(null));
   }, [showQr]);
 
-  const removePaired = (id: string) => {
-    // removing the single paired device -> clear list
-    save([]);
-  };
-
   const selectPaired = async (p: Paired | null) => {
     // p === null -> None selected
     if (!p) return;
 
     // open presenter window locally
-    try {
-      onOpenTeleprompter?.();
-    } catch (_) {}
+    onOpenTeleprompter?.();
 
     // Move presenter to primary (screen 0) then resize it to the reported paired-device opener size (if available).
-    try {
-      const win = presenterWindowRef?.current;
-      const primary =
-        screens?.screens?.find((s) => s.isPrimary) ??
-        screens?.screens?.[0] ??
-        null;
 
-      // prefer the *paired device's* reported screen (sent by pair.html); fall back to controller's screen
-      const remoteW = p?.screen?.width ?? null;
-      const remoteH = p?.screen?.height ?? null;
-      const targetW = remoteW ?? window.screen?.width ?? window.innerWidth;
-      const targetH = remoteH ?? window.screen?.height ?? window.innerHeight;
+    const win = presenterWindowRef?.current;
+    const primary =
+      screens?.screens?.find((s) => s.isPrimary) ??
+      screens?.screens?.[0] ??
+      null;
 
-      if (win && !win.closed && primary) {
-        // quick shrink then move/resize for a smooth effect
-        win.resizeTo(320, 200);
+    // prefer the *paired device's* reported screen (sent by pair.html); fall back to controller's screen
+    const remoteW = p?.screen?.width ?? null;
+    const remoteH = p?.screen?.height ?? null;
+    const targetW = remoteW ?? window.screen?.width ?? window.innerWidth;
+    const targetH = remoteH ?? window.screen?.height ?? window.innerHeight;
+
+    if (win && !win.closed && primary) {
+      // quick shrink then move/resize for a smooth effect
+      win.resizeTo(320, 200);
+      setTimeout(() => {
+        win.moveTo(primary.left ?? 0, primary.top ?? 0);
         setTimeout(() => {
-          try {
-            win.moveTo(primary.left ?? 0, primary.top ?? 0);
-          } catch (_) {}
-          setTimeout(() => {
-            try {
-              // resize to the *paired device* screen when available
-              win.resizeTo(
-                Math.max(320, Math.round(targetW)),
-                Math.max(200, Math.round(targetH)),
-              );
-              win.focus?.();
-            } catch (_) {}
-          }, 300);
-        }, 200);
-      }
-    } catch (_) {}
+          // resize to the *paired device* screen when available
+          win.resizeTo(
+            Math.max(320, Math.round(targetW)),
+            Math.max(200, Math.round(targetH)),
+          );
+          win.focus?.();
+        }, 300);
+      }, 200);
+    }
 
     // create a temporary room id for the WebRTC session and notify the paired device
     const roomId = Math.random().toString(36).slice(2, 8);
@@ -1156,7 +1142,7 @@ function PairedDeviceList({
 
     // notify paired phone to open the presenter URL (targeted by id)
     try {
-      const ws = wsRef.current;
+      const ws = wsRef?.current;
       if (ws && ws.readyState === 1) {
         ws.send(
           JSON.stringify({
@@ -1166,94 +1152,82 @@ function PairedDeviceList({
           }),
         );
       }
-    } catch (_) {}
+    } catch (err) {
+      console.warn("[Sidebar] ws.send(presenter-open) failed", err);
+    }
 
     // --- start controller-side WebRTC (join room + offer)
-    try {
-      const ws = wsRef.current;
-      // join the temporary room on the signaling server
-      if (ws && ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: "join", room: roomId }));
-      }
 
-      const pc = new RTCPeerConnection({
-        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-      });
-
-      // forward local ICE candidates to signaling server
-      pc.addEventListener("icecandidate", (e) => {
-        if (!e.candidate) return;
-        try {
-          ws?.send(JSON.stringify({ type: "ice", candidate: e.candidate }));
-        } catch (_) {}
-      });
-
-      // data channel for control messages
-      const dc = pc.createDataChannel("smui-control");
-      dc.onopen = () => console.log("[webrtc] control channel open", roomId);
-      dc.onmessage = (ev) => console.log("[webrtc] dc msg", ev.data);
-
-      // try to add local camera (optional) — best-effort
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: false,
-        });
-        for (const t of stream.getTracks()) pc.addTrack(t, stream);
-      } catch (_) {
-        // ignore if user denies camera; data-channel still works
-      }
-
-      // handle remote tracks (not strictly needed on controller)
-      pc.addEventListener("track", (ev) => {
-        console.log("[webrtc] remote track:", ev.streams && ev.streams[0]);
-      });
-
-      // create offer and send via signaling server
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      try {
-        ws?.send(JSON.stringify({ type: "offer", sdp: offer.sdp }));
-      } catch (_) {}
-
-      // listen for signaling messages for this room
-      const onWsMessage = (ev: MessageEvent) => {
-        try {
-          const msg = JSON.parse(ev.data);
-          // answer
-          if (msg?.type === "answer") {
-            const desc = {
-              type: "answer",
-              sdp: msg.sdp,
-            } as RTCSessionDescriptionInit;
-            pc.setRemoteDescription(desc).catch((err) =>
-              console.warn("[webrtc] setRemoteDescription failed", err),
-            );
-            return;
-          }
-          // ice candidate
-          if (msg?.type === "ice" && msg.candidate) {
-            pc.addIceCandidate(msg.candidate).catch(() => {});
-            return;
-          }
-        } catch (_) {}
-      };
-
-      ws?.addEventListener("message", onWsMessage);
-
-      // cleanup: remove listeners when the presenter window/tab closes
-      const cleanup = () => {
-        try {
-          ws?.removeEventListener("message", onWsMessage);
-        } catch (_) {}
-        try {
-          pc.close();
-        } catch (_) {}
-      };
-      window.addEventListener("beforeunload", cleanup, { once: true });
-    } catch (err) {
-      console.warn("WebRTC offer failed", err);
+    const ws = wsRef.current;
+    // join the temporary room on the signaling server
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: "join", room: roomId }));
     }
+
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+    });
+
+    // forward local ICE candidates to signaling server
+    pc.addEventListener("icecandidate", (e) => {
+      if (!e.candidate) return;
+
+      ws?.send(JSON.stringify({ type: "ice", candidate: e.candidate }));
+    });
+
+    // data channel for control messages
+    const dc = pc.createDataChannel("smui-control");
+    dc.onopen = () => console.log("[webrtc] control channel open", roomId);
+    dc.onmessage = (ev) => console.log("[webrtc] dc msg", ev.data);
+
+    // try to add local camera (optional) — best-effort
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: false,
+    });
+    for (const t of stream.getTracks()) pc.addTrack(t, stream);
+
+    // handle remote tracks (not strictly needed on controller)
+    pc.addEventListener("track", (ev) => {
+      console.log("[webrtc] remote track:", ev.streams && ev.streams[0]);
+    });
+
+    // create offer and send via signaling server
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    ws?.send(JSON.stringify({ type: "offer", sdp: offer.sdp }));
+
+    // listen for signaling messages for this room
+    const onWsMessage = (ev: MessageEvent) => {
+      const msg = JSON.parse(ev.data);
+      // answer
+      if (msg?.type === "answer") {
+        const desc = {
+          type: "answer",
+          sdp: msg.sdp,
+        } as RTCSessionDescriptionInit;
+        pc.setRemoteDescription(desc).catch((err) =>
+          console.warn("[webrtc] setRemoteDescription failed", err),
+        );
+        return;
+      }
+      // ice candidate
+      if (msg?.type === "ice" && msg.candidate) {
+        pc.addIceCandidate(msg.candidate).catch(() => {});
+        return;
+      }
+    };
+
+    ws?.addEventListener("message", onWsMessage);
+
+    // cleanup: remove listeners when the presenter window/tab closes
+    const cleanup = () => {
+      ws?.removeEventListener("message", onWsMessage);
+      pc.close();
+    };
+    window.addEventListener("beforeunload", cleanup, { once: true });
 
     // store lastSeen — single paired device: update/replace stored entry
     save([{ ...(paired[0] ?? p), lastSeen: Date.now() }]);
@@ -1279,17 +1253,18 @@ function PairedDeviceList({
   const items = paired.length
     ? paired.map((d) => ({
         id: d.id,
-        label: `${d.label ?? d.id} — ${detectDeviceType(d.ua, d.screen as any)}${d.screen?.width && d.screen?.height ? ` • ${d.screen.width}×${d.screen.height}` : ""}`,
+        label: `${d.label ?? d.id} — ${detectDeviceType(d.ua, d.screen)}${d.screen?.width && d.screen?.height ? ` • ${d.screen.width}×${d.screen.height}` : ""}`,
       }))
     : [{ id: "-1", label: "None" }];
 
   return (
     <div>
       <ScriptList
-        items={items as any}
+        items={items}
         activeId={paired.length ? paired[0].id : "-1"}
-        onSelect={() => {
-          /* read-only: no selection action */
+        onSelect={(id) => {
+          const p = paired.find((x) => x.id === id) ?? null;
+          selectPaired(p);
         }}
         onAdd={() => {
           setShowQr(!showQr);
@@ -1336,9 +1311,7 @@ function PairedDeviceList({
               <button
                 className="rounded-md bg-white/6 hover:bg-white/8 border border-white/6 py-1 px-2 text-sm text-white/90"
                 onClick={() => {
-                  try {
-                    navigator.clipboard.writeText(generatePairUrl());
-                  } catch (_) {}
+                  navigator.clipboard.writeText(generatePairUrl());
                 }}
               >
                 Copy link
@@ -1386,19 +1359,28 @@ function PositionPreview(props: {
 
     function pointToLocal(e: PointerEvent | MouseEvent | TouchEvent) {
       const rect = c!.getBoundingClientRect();
-      const pt = (e as TouchEvent).touches
-        ? (e as TouchEvent).touches[0]
-        : (e as any);
-      if (!pt || typeof pt.clientX !== "number") return { x: 0.5, y: 0.5 };
+      // normalize touch vs mouse/pointer events without `any`
+      if (
+        typeof (e as TouchEvent).touches !== "undefined" &&
+        (e as TouchEvent).touches.length
+      ) {
+        const t = (e as TouchEvent).touches[0];
+        return {
+          x: clamp((t.clientX - rect.left) / rect.width),
+          y: clamp((t.clientY - rect.top) / rect.height),
+        };
+      }
+      const mouseLike = e as MouseEvent | PointerEvent;
+      if (typeof mouseLike.clientX !== "number") return { x: 0.5, y: 0.5 };
       return {
-        x: clamp((pt.clientX - rect.left) / rect.width),
-        y: clamp((pt.clientY - rect.top) / rect.height),
+        x: clamp((mouseLike.clientX - rect.left) / rect.width),
+        y: clamp((mouseLike.clientY - rect.top) / rect.height),
       };
     }
 
     function onPointerDown(e: PointerEvent) {
       if (e instanceof MouseEvent && e.button !== 0) return;
-      (e.target as Element).setPointerCapture?.((e as any).pointerId);
+      (e.target as Element).setPointerCapture?.(e.pointerId);
       draggingRef.current = true;
       const p = pointToLocal(e);
       props.onChange(p.x, p.y);
@@ -1411,9 +1393,7 @@ function PositionPreview(props: {
     }
 
     function onPointerUp(e: PointerEvent) {
-      try {
-        (e.target as Element).releasePointerCapture?.((e as any).pointerId);
-      } catch (_) {}
+      (e.target as Element).releasePointerCapture?.(e.pointerId);
       draggingRef.current = false;
     }
 
@@ -1422,32 +1402,27 @@ function PositionPreview(props: {
       props.onChange(p.x, p.y);
     }
 
-    c.addEventListener("pointerdown", onPointerDown, { passive: false } as any);
+    c.addEventListener(
+      "pointerdown",
+      onPointerDown as EventListener,
+      { passive: false } as AddEventListenerOptions,
+    );
     window.addEventListener(
       "pointermove",
-      onPointerMove as any,
-      { passive: false } as any,
+      onPointerMove as EventListener,
+      { passive: false } as AddEventListenerOptions,
     );
-    window.addEventListener("pointerup", onPointerUp as any);
-    c.addEventListener("click", onClick);
+    window.addEventListener("pointerup", onPointerUp as EventListener);
+    c.addEventListener("click", onClick as EventListener);
 
     return () => {
-      try {
-        c.removeEventListener("pointerdown", onPointerDown as any);
-      } catch (_) {}
-      try {
-        window.removeEventListener("pointermove", onPointerMove as any);
-      } catch (_) {}
-      try {
-        window.removeEventListener("pointerup", onPointerUp as any);
-      } catch (_) {}
-      try {
-        c.removeEventListener("click", onClick as any);
-      } catch (_) {}
-      try {
-        c.style.touchAction = "";
-        c.style.userSelect = "";
-      } catch (_) {}
+      c.removeEventListener("pointerdown", onPointerDown as EventListener);
+      window.removeEventListener("pointermove", onPointerMove as EventListener);
+      window.removeEventListener("pointerup", onPointerUp as EventListener);
+      c.removeEventListener("click", onClick as EventListener);
+
+      c.style.touchAction = "";
+      c.style.userSelect = "";
     };
   }, [props.onChange]);
 
@@ -1481,8 +1456,8 @@ function PositionPreview(props: {
         props.onChange(Number(nx.toFixed(3)), Number(ny.toFixed(3)));
       }
     }
-    el.addEventListener("keydown", onKey as any);
-    return () => el.removeEventListener("keydown", onKey as any);
+    el.addEventListener("keydown", onKey as EventListener);
+    return () => el.removeEventListener("keydown", onKey as EventListener);
   }, [props.x, props.y, props.onChange]);
 
   const handleStyle: React.CSSProperties = {
@@ -1569,32 +1544,6 @@ function PositionPreview(props: {
   );
 }
 
-function SliderWithLabel(props: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-  /** optional commit callback */
-  onChangeEnd?: (v: number) => void;
-  unit: string;
-  min: number;
-  max: number;
-  displayTransform?: (v: number) => string;
-}) {
-  return (
-    <div>
-      <SliderRow
-        label={props.label}
-        value={props.value}
-        onChange={props.onChange}
-        onChangeEnd={props.onChangeEnd}
-        unit={props.unit}
-        min={props.min}
-        max={props.max}
-      />
-    </div>
-  );
-}
-
 function MicrophoneSelect(props: {
   mics: Array<{ deviceId: string; label: string }>;
   selected: string | null;
@@ -1626,16 +1575,12 @@ function MicrophoneSelect(props: {
       items={items}
       activeId={selected ?? ""}
       onSelect={(id) => {
-        try {
-          props.onChange(id);
-        } catch (_) {}
-        try {
-          window.dispatchEvent(
-            new CustomEvent("smui.open-sidebar-section", {
-              detail: { title: "Display Options" },
-            }),
-          );
-        } catch (_) {}
+        props.onChange(id);
+        window.dispatchEvent(
+          new CustomEvent("smui.open-sidebar-section", {
+            detail: { title: "Display Options" },
+          }),
+        );
       }}
       onRefresh={onRefresh}
     />

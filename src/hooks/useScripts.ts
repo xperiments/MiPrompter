@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { lsGet, lsSetJSON } from "../lib/local-storage";
 import type { ScriptDoc, ScriptChapter } from "../types";
 
 const STORAGE_KEY = "smui.scripts.v1";
@@ -8,8 +9,13 @@ const seedDocs: ScriptDoc[] = [
     id: "doc-1",
     name: "Prompter XL Overview",
     chapters: [
-      { id: "c1", text: "So let’s break down the design of Prompter XL first, and then we’ll talk about who Prompter XL is for." },
-      { id: "c2", text: `Hola.
+      {
+        id: "c1",
+        text: "So let’s break down the design of Prompter XL first, and then we’ll talk about who Prompter XL is for.",
+      },
+      {
+        id: "c2",
+        text: `Hola.
 Esta es una prueba completa de teleprompter con seguimiento por voz.
 
 Ahora voy a empezar leyendo a velocidad normal.
@@ -56,11 +62,18 @@ Finalmente, voy a cerrar esta prueba con una frase clara y directa:
 
 El seguimiento por voz debe sentirse natural, fluido y prácticamente invisible para el usuario.
 
-Fin de la prueba.` },
-      { id: "c3", text: "First thing is, when you unbox your Prompter XL, you’ll notice that the beam splitter glass is separate from the Prompter body..." },
-      { id: "c4", text: "So it’s nearly twice the physical size of Prompter, and is over 3 times the resolution..." },
+Fin de la prueba.`,
+      },
+      {
+        id: "c3",
+        text: "First thing is, when you unbox your Prompter XL, you’ll notice that the beam splitter glass is separate from the Prompter body...",
+      },
+      {
+        id: "c4",
+        text: "So it’s nearly twice the physical size of Prompter, and is over 3 times the resolution...",
+      },
     ],
-  }
+  },
 ];
 
 function createId(prefix = "id") {
@@ -74,35 +87,26 @@ export function useScripts(opts?: { persist?: boolean }) {
     // keep the existing localStorage seed for immediate UI responsiveness;
     // we'll migrate/load IndexedDB in an effect shortly after mount.
     if (persist) {
-      try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (raw) return JSON.parse(raw) as ScriptDoc[];
-      } catch (err) {
-        // fall back to seed
-      }
+      const raw = lsGet(STORAGE_KEY);
+      if (raw) return JSON.parse(raw) as ScriptDoc[];
     }
     return seedDocs;
   });
 
-  const [activeDocId, setActiveDocId] = useState<string>(() => docs[0]?.id ?? "");
+  const [activeDocId, setActiveDocId] = useState<string>(
+    () => docs[0]?.id ?? "",
+  );
 
   // persist to localStorage (small/fast) and asynchronously mirror to IndexedDB
   useEffect(() => {
     if (!persist) return;
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(docs));
-    } catch (err) {
-      // ignore
-    }
+
+    lsSetJSON(STORAGE_KEY, docs);
 
     // async mirror to IndexedDB
     (async () => {
-      try {
-        const { idbSet } = await import("../lib/db");
-        await idbSet(STORAGE_KEY, docs);
-      } catch (err) {
-        /* ignore IDB failures */
-      }
+      const { idbSet } = await import("../lib/db");
+      await idbSet(STORAGE_KEY, docs);
     })();
   }, [docs, persist]);
 
@@ -111,22 +115,18 @@ export function useScripts(opts?: { persist?: boolean }) {
     if (!persist) return;
     let mounted = true;
     (async () => {
-      try {
-        const { idbGet, idbSet } = await import("../lib/db");
-        const saved = await idbGet<ScriptDoc[]>(STORAGE_KEY);
-        if (mounted && saved && Array.isArray(saved) && saved.length > 0) {
-          setDocs(saved);
-          setActiveDocId(saved[0]?.id ?? "");
-        } else {
-          // if nothing in IDB but there is localStorage, migrate it
-          const raw = localStorage.getItem(STORAGE_KEY);
-          if (raw) {
-            const parsed = JSON.parse(raw) as ScriptDoc[];
-            await idbSet(STORAGE_KEY, parsed);
-          }
+      const { idbGet, idbSet } = await import("../lib/db");
+      const saved = await idbGet<ScriptDoc[]>(STORAGE_KEY);
+      if (mounted && saved && Array.isArray(saved) && saved.length > 0) {
+        setDocs(saved);
+        setActiveDocId(saved[0]?.id ?? "");
+      } else {
+        // if nothing in IDB but there is localStorage, migrate it
+        const raw = lsGet(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw) as ScriptDoc[];
+          await idbSet(STORAGE_KEY, parsed);
         }
-      } catch (err) {
-        // ignore
       }
     })();
     return () => {
@@ -134,11 +134,18 @@ export function useScripts(opts?: { persist?: boolean }) {
     };
   }, [persist]);
 
-  const activeDoc = useMemo(() => docs.find((d) => d.id === activeDocId) ?? docs[0] ?? null, [docs, activeDocId]);
+  const activeDoc = useMemo(
+    () => docs.find((d) => d.id === activeDocId) ?? docs[0] ?? null,
+    [docs, activeDocId],
+  );
 
   function addScript(name = "Untitled script") {
     const id = createId("doc");
-    const doc: ScriptDoc = { id, name, chapters: [{ id: createId("c"), text: "" }] };
+    const doc: ScriptDoc = {
+      id,
+      name,
+      chapters: [{ id: createId("c"), text: "" }],
+    };
     setDocs((s) => [doc, ...s]);
     setActiveDocId(id);
     return id;
@@ -157,13 +164,24 @@ export function useScripts(opts?: { persist?: boolean }) {
       prev.map((d) =>
         d.id !== docId
           ? d
-          : { ...d, chapters: d.chapters.map((c) => (c.id === chapterId ? { ...c, text } : c)) }
-      )
+          : {
+              ...d,
+              chapters: d.chapters.map((c) =>
+                c.id === chapterId ? { ...c, text } : c,
+              ),
+            },
+      ),
     );
   }
 
-  function addChapter(docId: string, opts?: { afterId?: string; text?: string }) {
-    const chapter: ScriptChapter = { id: createId("c"), text: opts?.text ?? "" };
+  function addChapter(
+    docId: string,
+    opts?: { afterId?: string; text?: string },
+  ) {
+    const chapter: ScriptChapter = {
+      id: createId("c"),
+      text: opts?.text ?? "",
+    };
     setDocs((prev) =>
       prev.map((d) => {
         if (d.id !== docId) return d;
@@ -173,7 +191,7 @@ export function useScripts(opts?: { persist?: boolean }) {
         const next = [...d.chapters];
         next.splice(idx + 1, 0, chapter);
         return { ...d, chapters: next };
-      })
+      }),
     );
     return chapter.id;
   }
@@ -187,13 +205,19 @@ export function useScripts(opts?: { persist?: boolean }) {
         const next = [...d.chapters];
         next.splice(Math.max(0, idx), 0, chapter);
         return { ...d, chapters: next };
-      })
+      }),
     );
     return chapter.id;
   }
 
   function removeChapter(docId: string, chapterId: string) {
-    setDocs((prev) => prev.map((d) => (d.id !== docId ? d : { ...d, chapters: d.chapters.filter((c) => c.id !== chapterId) })));
+    setDocs((prev) =>
+      prev.map((d) =>
+        d.id !== docId
+          ? d
+          : { ...d, chapters: d.chapters.filter((c) => c.id !== chapterId) },
+      ),
+    );
   }
 
   /** Move a chapter (by id) to a new index within the same document. */
@@ -208,7 +232,7 @@ export function useScripts(opts?: { persist?: boolean }) {
         const clamped = Math.max(0, Math.min(toIndex, next.length));
         next.splice(clamped, 0, item);
         return { ...d, chapters: next };
-      })
+      }),
     );
   }
 
@@ -221,22 +245,15 @@ export function useScripts(opts?: { persist?: boolean }) {
   }
 
   async function importScripts(json: string) {
-    try {
-      const parsed = JSON.parse(json) as ScriptDoc[];
-      if (!Array.isArray(parsed)) throw new Error("Invalid format");
-      setDocs(parsed);
-      setActiveDocId(parsed[0]?.id ?? "");
-      // persist to both storage layers
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
-        const { idbSet } = await import("../lib/db");
-        await idbSet(STORAGE_KEY, parsed);
-      } catch (err) {
-        /* ignore */
-      }
-    } catch (err) {
-      throw err;
-    }
+    const parsed = JSON.parse(json) as ScriptDoc[];
+    if (!Array.isArray(parsed)) throw new Error("Invalid format");
+    setDocs(parsed);
+    setActiveDocId(parsed[0]?.id ?? "");
+    // persist to both storage layers
+
+    lsSetJSON(STORAGE_KEY, parsed);
+    const { idbSet } = await import("../lib/db");
+    await idbSet(STORAGE_KEY, parsed);
   }
 
   function resetSeed() {

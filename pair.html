@@ -5,14 +5,58 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Pair Teleprompter</title>
     <style>
-      :root{color-scheme: dark;}
-      body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0b0b0c;color:#eaeaea}
-      .card{width:380px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.04);padding:20px;border-radius:12px;text-align:center}
-      .url{word-break:break-all;background:rgba(255,255,255,0.02);padding:8px;border-radius:6px;margin-top:10px;font-size:13px}
-      .btn{margin-top:14px;padding:8px 12px;border-radius:8px;background:#111;text-decoration:none;color:#fff;display:inline-block}
-      .ok{color:#7ef2a8}
-      .err{color:#ff9a9a}
-      
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        font-family:
+          Inter,
+          system-ui,
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          Helvetica,
+          Arial;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        margin: 0;
+        background: #0b0b0c;
+        color: #eaeaea;
+      }
+      .card {
+        width: 380px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.04);
+        padding: 20px;
+        border-radius: 12px;
+        text-align: center;
+      }
+      .url {
+        word-break: break-all;
+        background: rgba(255, 255, 255, 0.02);
+        padding: 8px;
+        border-radius: 6px;
+        margin-top: 10px;
+        font-size: 13px;
+      }
+      .btn {
+        margin-top: 14px;
+        padding: 8px 12px;
+        border-radius: 8px;
+        background: #111;
+        text-decoration: none;
+        color: #fff;
+        display: inline-block;
+      }
+      .ok {
+        color: #7ef2a8;
+      }
+      .err {
+        color: #ff9a9a;
+      }
+
       /* Video default state (inside card) */
       #incoming-stream {
         width: 100%;
@@ -21,21 +65,23 @@
         border-radius: 8px;
         background: #000;
       }
-      
+
       /* Streaming mode - hide card UI, show fullscreen video */
-      body.streaming .card > *:not(#incoming-stream) { display: none; }
-      body.streaming .card { 
-        position: fixed; 
-        inset: 0; 
-        width: 100vw; 
-        height: 100vh; 
-        background: #000; 
-        border: none; 
-        border-radius: 0; 
-        padding: 0; 
-        display: flex; 
-        align-items: center; 
-        justify-content: center; 
+      body.streaming .card > *:not(#incoming-stream) {
+        display: none;
+      }
+      body.streaming .card {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        background: #000;
+        border: none;
+        border-radius: 0;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
       body.streaming #incoming-stream {
         width: 100vw;
@@ -54,22 +100,22 @@
     </div>
 
     <script>
-      (function(){
+      (function () {
         const params = new URLSearchParams(location.search);
-        const ws = params.get('ws') || '';
-        const urlEl = document.getElementById('url');
-        const statusEl = document.getElementById('status');
-        const closeEl = document.getElementById('close');
+        const ws = params.get("ws") || "";
+        const urlEl = document.getElementById("url");
+        const statusEl = document.getElementById("status");
+        const closeEl = document.getElementById("close");
 
         // simplified logging — console only (removed on-page debug pane)
         function log(...parts) {
-          try { console.log(...parts); } catch(_) {}
+          console.log(...parts);
         }
 
         if (!ws) {
-          statusEl.textContent = 'No WebSocket URL provided';
-          statusEl.className = 'err';
-          log('no ws url');
+          statusEl.textContent = "No WebSocket URL provided";
+          statusEl.className = "err";
+          log("no ws url");
           return;
         }
         urlEl.textContent = ws;
@@ -78,250 +124,324 @@
         try {
           socket = new WebSocket(ws);
         } catch (err) {
-          statusEl.textContent = 'Invalid WebSocket URL';
-          statusEl.className = 'err';
-          log('ws ctor failed', err);
+          statusEl.textContent = "Invalid WebSocket URL";
+          statusEl.className = "err";
+          log("ws ctor failed", err);
           return;
         }
 
-        socket.addEventListener('open', () => {
-          statusEl.textContent = 'Connected — sending pair request';
-          statusEl.className = 'ok';
-          const id = 'phone-' + Math.floor(Math.random()*1000000).toString(36);
-          const payload = { type: 'pair-request', id, info: { ua: navigator.userAgent, screen: { width: window.screen.width, height: window.screen.height } } };
+        socket.addEventListener("open", () => {
+          statusEl.textContent = "Connected — sending pair request";
+          statusEl.className = "ok";
+          const id =
+            "phone-" + Math.floor(Math.random() * 1000000).toString(36);
+          const payload = {
+            type: "pair-request",
+            id,
+            info: {
+              ua: navigator.userAgent,
+              screen: {
+                width: window.screen.width,
+                height: window.screen.height,
+              },
+            },
+          };
           socket.send(JSON.stringify(payload));
-          log('[ws] open — sent pair-request', payload.id);
-          try { window.opener?.postMessage({ type: 'paired', id, info: payload.info }, location.origin); } catch (err) { log('postMessage paired err', err); }
+          log("[ws] open — sent pair-request", payload.id);
+
+          window.opener?.postMessage(
+            { type: "paired", id, info: payload.info },
+            location.origin,
+          );
         });
 
         // Simple RTCPeerConnection state for receiving a presenter stream
         let pc = null;
         let joinedRoom = null;
         let _pendingRemoteCandidates = [];
-        
-        const incomingVideo = document.createElement('video');
-        incomingVideo.id = 'incoming-stream';
+
+        const incomingVideo = document.createElement("video");
+        incomingVideo.id = "incoming-stream";
         incomingVideo.autoplay = true;
         incomingVideo.playsInline = true;
-        incomingVideo.setAttribute('webkit-playsinline', '');
+        incomingVideo.setAttribute("webkit-playsinline", "");
         incomingVideo.muted = true;
         incomingVideo.controls = true;
-        
 
-        socket.addEventListener('message', (ev) => {
-          log('[ws] rx', ev.data?.slice ? ev.data.slice(0, 200) : ev.data);
-          try {
-            const d = JSON.parse(ev.data);
+        socket.addEventListener("message", (ev) => {
+          log("[ws] rx", ev.data?.slice ? ev.data.slice(0, 200) : ev.data);
 
-            if (d?.type === 'pair-ack') {
-              window._pairedId = d.id;
-              statusEl.textContent = 'Paired';
-              statusEl.className = 'ok';
-              log('[pair] ack', d.id);
+          const d = JSON.parse(ev.data);
+
+          if (d?.type === "pair-ack") {
+            window._pairedId = d.id;
+            statusEl.textContent = "Paired";
+            statusEl.className = "ok";
+            log("[pair] ack", d.id);
+            return;
+          }
+
+          if (d?.type === "presenter-open") {
+            const to = d?.to;
+            const myId = window._pairedId || null;
+            if (to && myId && to !== myId) return;
+            log("[pair] presenter-open", d.url || "(no url)");
+            if (d.url) {
+              location.href = d.url;
+            }
+          }
+
+          if (d?.type === "presenter-share-invite" && d.room) {
+            const to = d?.to;
+            const myId = window._pairedId || null;
+            if (to && myId && to !== myId) return;
+            joinedRoom = d.room;
+            socket.send(JSON.stringify({ type: "join", room: joinedRoom }));
+            statusEl.textContent = "Joining stream…";
+            statusEl.className = "ok";
+            log("[share] joining room", joinedRoom);
+
+            return;
+          }
+
+          // Signaling messages
+          if (d?.type === "offer" && typeof d.sdp === "string") {
+            log("[webrtc] received offer (len=" + (d.sdp || "").length + ")");
+            if (!joinedRoom) {
+              log("offer ignored — not joinedRoom");
               return;
             }
 
-            if (d?.type === 'presenter-open') {
-              const to = d?.to;
-              const myId = window._pairedId || null;
-              if (to && myId && to !== myId) return;
-              log('[pair] presenter-open', d.url || '(no url)');
-              if (d.url) {
-                try { location.href = d.url; } catch (err) { log('nav error', err); }
-              }
-            }
+            if (!pc) {
+              pc = new RTCPeerConnection({
+                iceServers: [
+                  { urls: "stun:stun.l.google.com:19302" },
+                  {
+                    urls: "turn:openrelay.metered.ca:80",
+                    username: "openrelayproject",
+                    credential: "openrelayproject",
+                  },
+                  {
+                    urls: "turn:openrelay.metered.ca:443",
+                    username: "openrelayproject",
+                    credential: "openrelayproject",
+                  },
+                  {
+                    urls: "turn:openrelay.metered.ca:443?transport=tcp",
+                    username: "openrelayproject",
+                    credential: "openrelayproject",
+                  },
+                ],
+              });
 
-            if (d?.type === 'presenter-share-invite' && d.room) {
-              const to = d?.to;
-              const myId = window._pairedId || null;
-              if (to && myId && to !== myId) return;
-              try {
-                joinedRoom = d.room;
-                socket.send(JSON.stringify({ type: 'join', room: joinedRoom }));
-                statusEl.textContent = 'Joining stream…';
-                statusEl.className = 'ok';
-                log('[share] joining room', joinedRoom);
-              } catch (err) { log('join send failed', err); }
-              return;
-            }
+              // Explicitly declare we want to receive video
+              pc.addTransceiver("video", { direction: "recvonly" });
 
-            // Signaling messages
-            if (d?.type === 'offer' && typeof d.sdp === 'string') {
-              log('[webrtc] received offer (len=' + (d.sdp || '').length + ')');
-              if (!joinedRoom) { log('offer ignored — not joinedRoom'); return; }
-              try {
-                if (!pc) {
-                  pc = new RTCPeerConnection({ 
-                    iceServers: [
-                      { urls: 'stun:stun.l.google.com:19302' },
-                      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-                      { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-                      { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
-                    ] 
-                  });
+              pc.ontrack = (ev2) => {
+                log(
+                  "[pc] ontrack — streams:",
+                  (ev2.streams || []).length,
+                  "track:",
+                  ev2.track?.kind,
+                );
 
-                  // Explicitly declare we want to receive video
-                  pc.addTransceiver('video', { direction: 'recvonly' });
+                // Manual MediaStream track handling (like the POC)
+                let ms =
+                  incomingVideo.srcObject instanceof MediaStream
+                    ? incomingVideo.srcObject
+                    : new MediaStream();
+                if (
+                  ev2.track &&
+                  !ms.getTracks().some((t) => t.id === ev2.track.id)
+                ) {
+                  ms.addTrack(ev2.track);
+                }
+                incomingVideo.srcObject = ms;
 
-                  pc.ontrack = (ev2) => {
-                    log('[pc] ontrack — streams:', (ev2.streams || []).length, 'track:', ev2.track?.kind);
-                    
-                    // Manual MediaStream track handling (like the POC)
-                    let ms = incomingVideo.srcObject instanceof MediaStream ? incomingVideo.srcObject : new MediaStream();
-                    if (ev2.track && !ms.getTracks().some(t => t.id === ev2.track.id)) {
-                      ms.addTrack(ev2.track);
-                    }
-                    incomingVideo.srcObject = ms;
+                incomingVideo.addEventListener(
+                  "loadedmetadata",
+                  () => {
+                    log(
+                      "[video] metadata loaded",
+                      incomingVideo.videoWidth +
+                        "x" +
+                        incomingVideo.videoHeight,
+                    );
+                  },
+                  { once: true },
+                );
 
-                    incomingVideo.addEventListener('loadedmetadata', () => {
-                      log('[video] metadata loaded', incomingVideo.videoWidth + 'x' + incomingVideo.videoHeight);
-                    }, { once: true });
-
-                    if (!document.getElementById('incoming-stream')) {
-                      document.querySelector('.card')?.appendChild(incomingVideo);
-                    }
-
-                    incomingVideo.play()
-                      .then(() => {
-                        log('video.play OK');
-                        statusEl.textContent = 'Streaming';
-                        statusEl.className = 'ok';
-                        // Hide pairing UI, show fullscreen video
-                        document.body.classList.add('streaming');
-                      })
-                      .catch((err) => log('video.play failed', err?.message || err));
-
-                    // add an 'Enter fullscreen' affordance after playback starts
-                    if (!document.getElementById('enter-fullscreen-btn')) {
-                      const fsBtn = document.createElement('button');
-                      fsBtn.id = 'enter-fullscreen-btn';
-                      fsBtn.textContent = 'Tap to enter fullscreen';
-
-                      /* make the button cover the whole viewport so a single tap anywhere will enter fullscreen */
-                      fsBtn.style.position = 'fixed';
-                      fsBtn.style.inset = '0';
-                      fsBtn.style.width = '100vw';
-                      fsBtn.style.height = '100vh';
-                      fsBtn.style.zIndex = '60';
-
-                      /* center label and use subtle translucent background so user still sees video behind */
-                      fsBtn.style.display = 'flex';
-                      fsBtn.style.alignItems = 'center';
-                      fsBtn.style.justifyContent = 'center';
-                      fsBtn.style.fontSize = '18px';
-                      fsBtn.style.color = '#fff';
-                      fsBtn.style.background = 'rgba(0,0,0,0.25)';
-                      fsBtn.style.backdropFilter = 'blur(6px)';
-                      fsBtn.style.border = 'none';
-
-                      // Hide immediately on click (user gesture satisfied for fullscreen)
-                      fsBtn.addEventListener('click', async () => {
-                        try {
-                          fsBtn.style.display = 'none';
-                          // prefer the Fullscreen API
-                          if (document.fullscreenElement) {
-                            await document.exitFullscreen();
-                            return;
-                          }
-                          if (document.documentElement.requestFullscreen) {
-                            await document.documentElement.requestFullscreen();
-                            return;
-                          }
-                          // iOS Safari fallback: call webkitEnterFullscreen on the video element
-                          try { incomingVideo.webkitEnterFullscreen?.(); } catch (_) {}
-                        } catch (err) {
-                          log('fullscreen failed', err);
-                        }
-                      });
-
-                      // append and initially hide unless streaming
-                      document.body.appendChild(fsBtn);
-                      fsBtn.style.display = document.body.classList.contains('streaming') ? 'flex' : 'none';
-
-                      // when streaming state changes, show/hide the overlay button
-                      const obs = new MutationObserver(() => {
-                        fsBtn.style.display = document.body.classList.contains('streaming') ? 'flex' : 'none';
-                      });
-                      obs.observe(document.body, { attributes: true, attributeFilter: ['class'] });
-
-                      // show the overlay again when exiting fullscreen (Fullscreen API)
-                      document.addEventListener('fullscreenchange', () => {
-                        if (!document.fullscreenElement && document.body.classList.contains('streaming')) {
-                          fsBtn.style.display = 'flex';
-                        }
-                      });
-
-                      // iOS webkit: show when webkit fullscreen ends on the video element
-                      incomingVideo.addEventListener('webkitendfullscreen', () => {
-                        if (document.body.classList.contains('streaming')) fsBtn.style.display = 'flex';
-                      });
-                    }
-                  };
-
-                  pc.onicecandidate = (iceEv) => {
-                    if (!iceEv.candidate) return;
-                    try { socket.send(JSON.stringify({ type: 'ice', candidate: iceEv.candidate, room: joinedRoom })); log('[pc] sent local ICE'); } catch (err) { log('send ice failed', err); }
-                  };
-
-                  pc.onconnectionstatechange = () => log('[pc] connectionState', pc.connectionState);
+                if (!document.getElementById("incoming-stream")) {
+                  document.querySelector(".card")?.appendChild(incomingVideo);
                 }
 
-                (async () => {
-                  try {
-                    await pc.setRemoteDescription({ type: 'offer', sdp: d.sdp });
-                    log('[pc] setRemoteDescription OK');
-                    const answer = await pc.createAnswer();
-                    await pc.setLocalDescription(answer);
-                    socket.send(JSON.stringify({ type: 'answer', sdp: pc.localDescription.sdp, room: joinedRoom }));
-                    log('[webrtc] answer sent');
+                incomingVideo
+                  .play()
+                  .then(() => {
+                    log("video.play OK");
+                    statusEl.textContent = "Streaming";
+                    statusEl.className = "ok";
+                    // Hide pairing UI, show fullscreen video
+                    document.body.classList.add("streaming");
+                  })
+                  .catch((err) =>
+                    log("video.play failed", err?.message || err),
+                  );
 
-                    // Drain pending ICE candidates now that remoteDescription is set
-                    while (_pendingRemoteCandidates.length) {
-                      const c = _pendingRemoteCandidates.shift();
-                      try {
-                        await pc.addIceCandidate(c);
-                        log('[ice] added queued candidate');
-                      } catch (e) {
-                        log('ICE add (drain) error:', e?.message || e);
-                      }
+                // add an 'Enter fullscreen' affordance after playback starts
+                if (!document.getElementById("enter-fullscreen-btn")) {
+                  const fsBtn = document.createElement("button");
+                  fsBtn.id = "enter-fullscreen-btn";
+                  fsBtn.textContent = "Tap to enter fullscreen";
+
+                  /* make the button cover the whole viewport so a single tap anywhere will enter fullscreen */
+                  fsBtn.style.position = "fixed";
+                  fsBtn.style.inset = "0";
+                  fsBtn.style.width = "100vw";
+                  fsBtn.style.height = "100vh";
+                  fsBtn.style.zIndex = "60";
+
+                  /* center label and use subtle translucent background so user still sees video behind */
+                  fsBtn.style.display = "flex";
+                  fsBtn.style.alignItems = "center";
+                  fsBtn.style.justifyContent = "center";
+                  fsBtn.style.fontSize = "18px";
+                  fsBtn.style.color = "#fff";
+                  fsBtn.style.background = "rgba(0,0,0,0.25)";
+                  fsBtn.style.backdropFilter = "blur(6px)";
+                  fsBtn.style.border = "none";
+
+                  // Hide immediately on click (user gesture satisfied for fullscreen)
+                  fsBtn.addEventListener("click", async () => {
+                    fsBtn.style.display = "none";
+                    // prefer the Fullscreen API
+                    if (document.fullscreenElement) {
+                      await document.exitFullscreen();
+                      return;
                     }
-                  } catch (err) {
-                    log('pc/answer error', err);
-                  }
-                })();
-              } catch (err) {
-                log('handle offer failed', err);
+                    if (document.documentElement.requestFullscreen) {
+                      await document.documentElement.requestFullscreen();
+                      return;
+                    }
+                    // iOS Safari fallback: call webkitEnterFullscreen on the video element
+
+                    incomingVideo.webkitEnterFullscreen?.();
+                  });
+
+                  // append and initially hide unless streaming
+                  document.body.appendChild(fsBtn);
+                  fsBtn.style.display = document.body.classList.contains(
+                    "streaming",
+                  )
+                    ? "flex"
+                    : "none";
+
+                  // when streaming state changes, show/hide the overlay button
+                  const obs = new MutationObserver(() => {
+                    fsBtn.style.display = document.body.classList.contains(
+                      "streaming",
+                    )
+                      ? "flex"
+                      : "none";
+                  });
+                  obs.observe(document.body, {
+                    attributes: true,
+                    attributeFilter: ["class"],
+                  });
+
+                  // show the overlay again when exiting fullscreen (Fullscreen API)
+                  document.addEventListener("fullscreenchange", () => {
+                    if (
+                      !document.fullscreenElement &&
+                      document.body.classList.contains("streaming")
+                    ) {
+                      fsBtn.style.display = "flex";
+                    }
+                  });
+
+                  // iOS webkit: show when webkit fullscreen ends on the video element
+                  incomingVideo.addEventListener("webkitendfullscreen", () => {
+                    if (document.body.classList.contains("streaming"))
+                      fsBtn.style.display = "flex";
+                  });
+                }
+              };
+
+              pc.onicecandidate = (iceEv) => {
+                if (!iceEv.candidate) return;
+
+                socket.send(
+                  JSON.stringify({
+                    type: "ice",
+                    candidate: iceEv.candidate,
+                    room: joinedRoom,
+                  }),
+                );
+                log("[pc] sent local ICE");
+              };
+
+              pc.onconnectionstatechange = () =>
+                log("[pc] connectionState", pc.connectionState);
+            }
+
+            (async () => {
+              await pc.setRemoteDescription({
+                type: "offer",
+                sdp: d.sdp,
+              });
+              log("[pc] setRemoteDescription OK");
+              const answer = await pc.createAnswer();
+              await pc.setLocalDescription(answer);
+              socket.send(
+                JSON.stringify({
+                  type: "answer",
+                  sdp: pc.localDescription.sdp,
+                  room: joinedRoom,
+                }),
+              );
+              log("[webrtc] answer sent");
+
+              // Drain pending ICE candidates now that remoteDescription is set
+              while (_pendingRemoteCandidates.length) {
+                const c = _pendingRemoteCandidates.shift();
+
+                await pc.addIceCandidate(c);
+                log("[ice] added queued candidate");
               }
+            })();
+
+            return;
+          }
+
+          if (d?.type === "ice" && d.candidate) {
+            // Queue ICE candidates if we don't have remoteDescription yet (like the POC)
+            if (!pc || !pc.remoteDescription || !pc.remoteDescription.type) {
+              _pendingRemoteCandidates.push(d.candidate);
+              log(
+                "[ice] queued (no remoteDescription) count=",
+                _pendingRemoteCandidates.length,
+              );
               return;
             }
 
-            if (d?.type === 'ice' && d.candidate) {
-              // Queue ICE candidates if we don't have remoteDescription yet (like the POC)
-              if (!pc || !pc.remoteDescription || !pc.remoteDescription.type) {
-                _pendingRemoteCandidates.push(d.candidate);
-                log('[ice] queued (no remoteDescription) count=', _pendingRemoteCandidates.length);
-                return;
-              }
-              try { 
-                pc.addIceCandidate(d.candidate)
-                  .then(() => log('[ice] added remote candidate'))
-                  .catch((e) => log('addIceCandidate failed', e?.message || e)); 
-              } catch (err) { 
-                log('addIceCandidate exception', err); 
-              }
-              return;
-            }
+            pc.addIceCandidate(d.candidate)
+              .then(() => log("[ice] added remote candidate"))
+              .catch((e) => log("addIceCandidate failed", e?.message || e));
 
-          } catch (err) { log('message handler error', err); }
+            return;
+          }
         });
 
-        socket.addEventListener('close', () => {
-          statusEl.textContent = 'Disconnected';
-          statusEl.className = '';
-          log('[ws] closed');
+        socket.addEventListener("close", () => {
+          statusEl.textContent = "Disconnected";
+          statusEl.className = "";
+          log("[ws] closed");
         });
 
-        closeEl.addEventListener('click', (e) => { e.preventDefault(); window.close(); });
+        closeEl.addEventListener("click", (e) => {
+          e.preventDefault();
+          window.close();
+        });
       })();
     </script>
   </body>

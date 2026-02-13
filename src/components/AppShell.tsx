@@ -43,18 +43,14 @@ export function AppShell(props: {
   }, []);
 
   async function toggleFullscreen() {
-    try {
-      if (!document.fullscreenElement) {
-        await panelRef.current?.requestFullscreen?.();
-        setIsFullscreen(true);
-        props.onFullscreenChange?.(true);
-      } else {
-        await document.exitFullscreen();
-        setIsFullscreen(false);
-        props.onFullscreenChange?.(false);
-      }
-    } catch (err) {
-      // ignore
+    if (!document.fullscreenElement) {
+      await panelRef.current?.requestFullscreen?.();
+      setIsFullscreen(true);
+      props.onFullscreenChange?.(true);
+    } else {
+      await document.exitFullscreen();
+      setIsFullscreen(false);
+      props.onFullscreenChange?.(false);
     }
   }
 

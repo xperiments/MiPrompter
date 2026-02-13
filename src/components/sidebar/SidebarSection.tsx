@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from "react";
 import Icon from "../Icon";
+import { useLocalStorage } from "../../hooks/useLocalStorage";
 
 export function SidebarSection(props: { icon?: string; title: string; defaultOpen?: boolean; storageKey?: string; children: React.ReactNode }) {
   const storageKey = useMemo(() => {
@@ -7,12 +8,13 @@ export function SidebarSection(props: { icon?: string; title: string; defaultOpe
     return `smui.sidebar.${encodeURIComponent(id)}.open`;
   }, [props.storageKey, props.title]);
 
+  const ls = useLocalStorage();
   const readInitial = () => {
-    try {
-      const v = typeof window !== "undefined" ? window.localStorage.getItem(storageKey) : null;
+
+      const v = ls.getRaw(storageKey);
       if (v === "1") return true;
       if (v === "0") return false;
-    } catch (_) {}
+
     return props.defaultOpen ?? false;
   };
 
@@ -21,10 +23,10 @@ export function SidebarSection(props: { icon?: string; title: string; defaultOpe
   const toggle = () => {
     const next = !open;
     setOpen(next);
-    try {
-      window.localStorage.setItem(storageKey, next ? "1" : "0");
-    } catch (_) {}
-  };
+
+      ls.setRaw(storageKey, next ? "1" : "0");
+
+  }; 
 
   return (
     <div className="border-b border-[color:var(--line)]">

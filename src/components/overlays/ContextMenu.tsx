@@ -42,9 +42,7 @@ export function ContextMenu(props: {
             ].join(" ")}
             onClick={() => {
               if (it.disabled) return;
-              try {
-                props.onSelect?.(it.label);
-              } catch (_) {}
+              props.onSelect?.(it.label);
               props.onClose();
             }}
           >

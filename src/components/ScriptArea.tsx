@@ -84,9 +84,7 @@ export const ScriptArea = React.forwardRef<
       const ta = document.querySelector<HTMLTextAreaElement>(
         `[data-chapter-textarea="${focusedChapterId}"]`,
       );
-      try {
-        ta?.focus();
-      } catch (_) {}
+      ta?.focus();
     })();
     return () => {
       mounted = false;
@@ -114,11 +112,9 @@ export const ScriptArea = React.forwardRef<
               `[data-chapter-textarea="${chapterId}"]`,
             );
             if (!ta) return;
-            try {
-              ta.focus();
-              const pos = Math.min(ta.value.length, (ta.value ?? "").length);
-              ta.setSelectionRange(pos, pos);
-            } catch (_) {}
+            ta.focus();
+            const pos = Math.min(ta.value.length, (ta.value ?? "").length);
+            ta.setSelectionRange(pos, pos);
             ta.scrollIntoView({ block: "center", behavior: "smooth" });
           })();
         }

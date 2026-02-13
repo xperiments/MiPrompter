@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
-import type { ScriptDoc, PresenterAppearance } from '../types';
-import { sendToPresenterViaWs } from '../lib/presenter-transport';
+import { useEffect } from "react";
+import type { ScriptDoc, PresenterAppearance } from "../types";
+import { sendToPresenterViaWs } from "../lib/presenter-transport";
 
 export interface UsePresenterSyncParams {
   presenterWindowRef?: React.RefObject<Window | null>;
@@ -26,36 +26,23 @@ export function usePresenterSync({
     const origin = window.location.origin;
     const activeDoc = scripts.find((s) => s.id === activeScriptId) ?? null;
 
-    const msgLoad = { type: 'presenter-load-doc', doc: activeDoc };
-    const msgParams = { type: 'set-params', docId: activeScriptId };
+    const msgLoad = { type: "presenter-load-doc", doc: activeDoc };
+    const msgParams = { type: "set-params", docId: activeScriptId };
 
     // Preferred: use centralized `send` when available
     if (send) {
-      try {
-        send(msgLoad);
-        send(msgParams);
-      } catch (_) {
-        /* ignore */
-      }
+      send(msgLoad);
+      send(msgParams);
     } else {
       // If we have a local presenter window, send via postMessage
       if (activeScriptId && win && !win.closed) {
-        try {
-          win.postMessage(msgLoad, origin);
-          win.postMessage(msgParams, origin);
-        } catch {
-          /* ignore */
-        }
+        win.postMessage(msgLoad, origin);
+        win.postMessage(msgParams, origin);
       }
 
-      // Also attempt WS transport (covers phone presenters and remote clients)
-      try {
-        // sendToPresenterViaWs returns false if no WS transport registered
-        sendToPresenterViaWs(msgLoad);
-        sendToPresenterViaWs(msgParams);
-      } catch (_) {
-        /* ignore */
-      }
+      // sendToPresenterViaWs returns false if no WS transport registered
+      sendToPresenterViaWs(msgLoad);
+      sendToPresenterViaWs(msgParams);
     }
 
     if (presenterDisplayedDocRef && activeScriptId) {
@@ -64,44 +51,44 @@ export function usePresenterSync({
     if (presenterDisplayedChapterRef && activeDoc?.chapters?.[0]) {
       presenterDisplayedChapterRef.current = activeDoc.chapters[0].id;
     }
-  }, [activeScriptId, scripts, presenterWindowRef, presenterDisplayedDocRef, presenterDisplayedChapterRef, send]);
+  }, [
+    activeScriptId,
+    scripts,
+    presenterWindowRef,
+    presenterDisplayedDocRef,
+    presenterDisplayedChapterRef,
+    send,
+  ]);
 }
 
 export function updatePresenterWindow(
   presenterWindowRef: React.RefObject<Window | null>,
-  updates: Partial<PresenterAppearance & { micDeviceId?: string | null; docId?: string }>
+  updates: Partial<
+    PresenterAppearance & { micDeviceId?: string | null; docId?: string }
+  >,
 ) {
-  try {
-    const win = presenterWindowRef.current;
+  const win = presenterWindowRef.current;
 
-    // Separate appearance properties from other properties
-    const { micDeviceId, docId, ...appearanceProps } = updates;
-    const message: any = { type: 'set-params' };
-    
-    if (micDeviceId !== undefined) message.micDeviceId = micDeviceId;
-    if (docId !== undefined) message.docId = docId;
-    if (Object.keys(appearanceProps).length > 0) message.appearance = appearanceProps;
+  // Separate appearance properties from other properties
+  const { micDeviceId, docId, ...appearanceProps } = updates;
+  const message: any = { type: "set-params" };
 
-    let posted = false;
-    if (win && !win.closed) {
-      try {
-        win.postMessage(message, window.location.origin);
-        posted = true;
-      } catch {
-        /* ignore */
-      }
-    }
+  if (micDeviceId !== undefined) message.micDeviceId = micDeviceId;
+  if (docId !== undefined) message.docId = docId;
+  if (Object.keys(appearanceProps).length > 0)
+    message.appearance = appearanceProps;
 
-    // If WS transport is available, send there as well (covers phone presenters)
-    try {
-      const sent = sendToPresenterViaWs(message);
-      // If neither delivered, silently fail (existing behaviour)
-      posted = posted || sent;
-    } catch (_) {}
-
-    return posted;
-  } catch {
-    // Ignore postMessage errors
-    return false;
+  let posted = false;
+  if (win && !win.closed) {
+    win.postMessage(message, window.location.origin);
+    posted = true;
   }
+
+  // If WS transport is available, send there as well (covers phone presenters)
+
+  const sent = sendToPresenterViaWs(message);
+  // If neither delivered, silently fail (existing behaviour)
+  posted = posted || sent;
+
+  return posted;
 }

@@ -8,9 +8,11 @@ export interface MicrophoneInfo {
 
 const MIC_STORAGE_KEY = 'smui.audio.input';
 
+import { lsGet, lsSet, lsRemove } from '../lib/local-storage';
+
 function getStoredMic(): string | null {
   try {
-    return localStorage.getItem(MIC_STORAGE_KEY);
+    return lsGet(MIC_STORAGE_KEY);
   } catch {
     return null;
   }
@@ -19,14 +21,14 @@ function getStoredMic(): string | null {
 function persistMic(deviceId: string | null): void {
   try {
     if (deviceId) {
-      localStorage.setItem(MIC_STORAGE_KEY, deviceId);
+      lsSet(MIC_STORAGE_KEY, deviceId);
     } else {
-      localStorage.removeItem(MIC_STORAGE_KEY);
+      lsRemove(MIC_STORAGE_KEY);
     }
   } catch {
     // Ignore storage errors
   }
-}
+} 
 
 async function awaitDeviceChange(timeout = 800): Promise<void> {
   return new Promise<void>((resolve) => {

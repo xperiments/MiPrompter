@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { openTeleprompter, type ScreenInfo, type Appearance as PresenterAppearance } from "../lib/presenter";
+import {
+  openTeleprompter,
+  type ScreenInfo,
+  type Appearance as PresenterAppearance,
+} from "../lib/presenter";
 import { sendToPresenterViaWs } from "../lib/presenter-transport";
 
 type PresenterState = {
@@ -19,129 +23,186 @@ export function usePresenterBridge() {
   const presenterDisplayedDocRef = useRef<string | null>(null);
   const presenterDisplayedChapterRef = useRef<string | null>(null);
   const subscribersRef = useRef<Map<string, Set<MessageHandler>>>(new Map());
-  const [presenterState, setPresenterState] = useState<PresenterState>({ playing: false, mic: false, windowOpen: false, wordIndex: 0 });
+  const [presenterState, setPresenterState] = useState<PresenterState>({
+    playing: false,
+    mic: false,
+    windowOpen: false,
+    wordIndex: 0,
+  });
 
   useEffect(() => {
     function handlePresenterMessage(e: MessageEvent) {
       if (e.origin !== window.location.origin) return;
-      if (e.data?.type === 'presenter-ready') {
-        setPresenterState(s => ({ ...s, windowOpen: true }));
-        try { presenterWindowRef.current = e.source as Window; } catch (err) { /* ignore */ }
+      if (e.data?.type === "presenter-ready") {
+        setPresenterState((s) => ({ ...s, windowOpen: true }));
+        presenterWindowRef.current = e.source as Window;
       }
 
-      if (e.data?.type === 'presenter-closed' || e.data?.type === 'presenter-unload') {
-        setPresenterState(s => ({ ...s, windowOpen: false }));
-        try { if (presenterWindowRef.current === (e.source as Window)) presenterWindowRef.current = null; } catch (err) { /* ignore */ }
+      if (
+        e.data?.type === "presenter-closed" ||
+        e.data?.type === "presenter-unload"
+      ) {
+        setPresenterState((s) => ({ ...s, windowOpen: false }));
+
+        if (presenterWindowRef.current === (e.source as Window))
+          presenterWindowRef.current = null;
       }
 
       if (e.data?.type === "presenter-chapter-loaded") {
         presenterDisplayedDocRef.current = e.data.docId || null;
         presenterDisplayedChapterRef.current = e.data.chapterId || null;
       }
-      if (e.data?.type === 'presenter-playing') setPresenterState(s => ({ ...s, playing: Boolean(e.data.playing) }));
-      if (e.data?.type === 'presenter-mic') setPresenterState(s => ({ ...s, mic: Boolean(e.data.active) }));
-      if (e.data?.type === 'presenter-word-index') setPresenterState(s => ({ ...s, wordIndex: Number(e.data.index) }));
+      if (e.data?.type === "presenter-playing")
+        setPresenterState((s) => ({ ...s, playing: Boolean(e.data.playing) }));
+      if (e.data?.type === "presenter-mic")
+        setPresenterState((s) => ({ ...s, mic: Boolean(e.data.active) }));
+      if (e.data?.type === "presenter-word-index")
+        setPresenterState((s) => ({ ...s, wordIndex: Number(e.data.index) }));
 
       // notify local subscribers (typed handlers registered via `on`)
-      try {
-        const t = e.data?.type;
-        if (t) {
-          const handlers = subscribersRef.current.get(t);
-          if (handlers) {
-            handlers.forEach(h => {
-              try { h(e.data, { origin: e.origin, transport: 'postMessage', source: e.source as MessageEventSource | null }); } catch (_) { /* handler error */ }
+
+      const t = e.data?.type;
+      if (t) {
+        const handlers = subscribersRef.current.get(t);
+        if (handlers) {
+          handlers.forEach((h) => {
+            h(e.data, {
+              origin: e.origin,
+              transport: "postMessage",
+              source: e.source as MessageEventSource | null,
             });
-          }
+          });
         }
-      } catch (_) { /* ignore */ }
+      }
     }
-    window.addEventListener('message', handlePresenterMessage);
+    window.addEventListener("message", handlePresenterMessage);
 
     const id = window.setInterval(() => {
-      try {
-        const w = presenterWindowRef.current;
-        if (!w) return setPresenterState(s => ({ ...s, windowOpen: false }));
-        if (w.closed) {
-          presenterWindowRef.current = null;
-          setPresenterState(s => ({ ...s, windowOpen: false }));
-        } else setPresenterState(s => ({ ...s, windowOpen: true }));
-      } catch (err) { /* ignore */ }
+      const w = presenterWindowRef.current;
+      if (!w) return setPresenterState((s) => ({ ...s, windowOpen: false }));
+      if (w.closed) {
+        presenterWindowRef.current = null;
+        setPresenterState((s) => ({ ...s, windowOpen: false }));
+      } else setPresenterState((s) => ({ ...s, windowOpen: true }));
     }, 800);
 
     return () => {
-      window.removeEventListener('message', handlePresenterMessage);
+      window.removeEventListener("message", handlePresenterMessage);
       clearInterval(id);
     };
   }, []);
 
-  const openPresenter = useCallback((opts: { screen: ScreenInfo; docs?: any[]; activeDocId?: string | null; appearance?: PresenterAppearance }) => {
-    try {
-      const win = openTeleprompter({ screen: opts.screen, docs: opts.docs, activeDocId: opts.activeDocId, appearance: opts.appearance, presenterWindowRef });
-      setPresenterState(s => ({ ...s, windowOpen: Boolean(win) }));
-      
-      return win;
-    } catch (err) {
-      return null;
-    }
-  }, []);
+  const openPresenter = useCallback(
+    (opts: {
+      screen: ScreenInfo;
+      docs?: any[];
+      activeDocId?: string | null;
+      appearance?: PresenterAppearance;
+    }) => {
+
+        const win = openTeleprompter({
+          screen: opts.screen,
+          docs: opts.docs,
+          activeDocId: opts.activeDocId,
+          appearance: opts.appearance,
+          presenterWindowRef,
+        });
+        setPresenterState((s) => ({ ...s, windowOpen: Boolean(win) }));
+
+        return win;
+
+    },
+    [],
+  );
 
   type PresenterMessage = { type: string; [key: string]: any };
-  type MessageHandler = (payload: any, meta: { origin: string; transport: 'postMessage' | 'ws'; source?: MessageEventSource | null }) => void;
+  type MessageHandler = (
+    payload: any,
+    meta: {
+      origin: string;
+      transport: "postMessage" | "ws";
+      source?: MessageEventSource | null;
+    },
+  ) => void;
 
   const postToPresenter = useCallback((msg: PresenterMessage) => {
-    try {
+
       const w = presenterWindowRef.current;
       if (w && !w.closed) {
         w.postMessage(msg, window.location.origin);
         return true;
       }
-    } catch (_) { /* ignore */ }
+
     return false;
   }, []);
 
-  const send = useCallback((msg: PresenterMessage) => {
-    const ok = postToPresenter(msg);
-    if (ok) return true;
-    try {
-      return Boolean(sendToPresenterViaWs && sendToPresenterViaWs(msg));
-    } catch (_) { return false; }
-  }, [postToPresenter]);
+  const send = useCallback(
+    (msg: PresenterMessage) => {
+      const ok = postToPresenter(msg);
+      if (ok) return true;
 
-  const play = useCallback(() => send({ type: 'play' }), [send]);
-  const pause = useCallback(() => send({ type: 'pause' }), [send]);
-  const gotoChapter = useCallback((chapterId: string) => send({ type: 'presenter-goto-chapter', chapterId }), [send]);
-  const setWordIndex = useCallback((index: number) => send({ type: 'set-word-index', index }), [send]);
-  const updateParams = useCallback((p: Partial<{ appearance: PresenterAppearance; micDeviceId?: string | null; docId?: string }>) => send({ type: 'set-params', ...p }), [send]);
+        return Boolean(sendToPresenterViaWs && sendToPresenterViaWs(msg));
 
-  const togglePlay = useCallback((playing?: boolean) => {
-    try {
-      if (typeof playing === 'boolean') {
-        return playing ? play() : pause();
-      }
-      // fallback: toggle based on last-known state
-      return presenterState.playing ? pause() : play();
-    } catch (_) { return false; }
-  }, [play, pause, presenterState.playing]);
+    },
+    [postToPresenter],
+  );
+
+  const play = useCallback(() => send({ type: "play" }), [send]);
+  const pause = useCallback(() => send({ type: "pause" }), [send]);
+  const gotoChapter = useCallback(
+    (chapterId: string) => send({ type: "presenter-goto-chapter", chapterId }),
+    [send],
+  );
+  const setWordIndex = useCallback(
+    (index: number) => send({ type: "set-word-index", index }),
+    [send],
+  );
+  const updateParams = useCallback(
+    (
+      p: Partial<{
+        appearance: PresenterAppearance;
+        micDeviceId?: string | null;
+        docId?: string;
+      }>,
+    ) => send({ type: "set-params", ...p }),
+    [send],
+  );
+
+  const togglePlay = useCallback(
+    (playing?: boolean) => {
+
+        if (typeof playing === "boolean") {
+          return playing ? play() : pause();
+        }
+        // fallback: toggle based on last-known state
+        return presenterState.playing ? pause() : play();
+
+    },
+    [play, pause, presenterState.playing],
+  );
 
   const closePresenter = useCallback(() => {
-    try {
+
       const w = presenterWindowRef.current;
       if (w && !w.closed) {
         w.close();
         presenterWindowRef.current = null;
-        setPresenterState(s => ({ ...s, windowOpen: false }));
+        setPresenterState((s) => ({ ...s, windowOpen: false }));
         return true;
       }
-    } catch (_) { /* ignore */ }
+
     presenterWindowRef.current = null;
-    setPresenterState(s => ({ ...s, windowOpen: false }));
+    setPresenterState((s) => ({ ...s, windowOpen: false }));
     return false;
   }, []);
 
   const on = useCallback((type: string, handler: MessageHandler) => {
     const map = subscribersRef.current;
     let set = map.get(type);
-    if (!set) { set = new Set(); map.set(type, set); }
+    if (!set) {
+      set = new Set();
+      map.set(type, set);
+    }
     set.add(handler);
     return () => {
       set!.delete(handler);
@@ -149,7 +210,10 @@ export function usePresenterBridge() {
     };
   }, []);
 
-  const displayedRefs = { presenterDisplayedDocRef, presenterDisplayedChapterRef } as const;
+  const displayedRefs = {
+    presenterDisplayedDocRef,
+    presenterDisplayedChapterRef,
+  } as const;
 
   return {
     presenterWindowRef,
@@ -167,4 +231,3 @@ export function usePresenterBridge() {
     displayedRefs,
   } as const;
 }
-

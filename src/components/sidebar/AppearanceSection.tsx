@@ -34,7 +34,13 @@ function AppearanceSection({
       <SidebarSection title="Appearance" icon="tune-3-knobs-horizontal">
         <div style={{ display: "grid", gap: 18 }}>
           <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
               <div style={{ fontSize: 12, color: "#cbd5e1" }}>Alignment</div>
             </div>
             <Segmented
@@ -49,18 +55,19 @@ function AppearanceSection({
           </div>
 
           <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
               <div style={{ fontSize: 12, color: "#cbd5e1" }}>Font</div>
             </div>
             <Select
               value={presenter.fontFamily ?? "Inter"}
               onChange={(v) => {
                 updatePresenterAppearance({ fontFamily: v });
-                try {
-                  if (presenterWindowRef) {
-                    // parent will call updatePresenterWindow when necessary
-                  }
-                } catch (_) {}
               }}
               options={[
                 { value: "Inter", label: "Inter" },
@@ -73,24 +80,65 @@ function AppearanceSection({
             />
           </div>
 
-          <SliderRow label="Font Size" value={presenter.fontSize ?? 40} onChange={handleSliderChange("fontSize")} unit="px" min={20} max={120} />
+          <SliderRow
+            label="Font Size"
+            value={presenter.fontSize ?? 40}
+            onChange={handleSliderChange("fontSize")}
+            unit="px"
+            min={20}
+            max={120}
+          />
 
-          <SliderRow label="Side Margins" value={presenter.sideMargins ?? 0} onChange={handleSliderChange("sideMargins")} unit="px" min={1} max={120} />
+          <SliderRow
+            label="Side Margins"
+            value={presenter.sideMargins ?? 0}
+            onChange={handleSliderChange("sideMargins")}
+            unit="px"
+            min={1}
+            max={120}
+          />
 
-          <SliderRow label="Line Spacing" value={presenter.lineSpacing ?? 140} onChange={handleSliderChange("lineSpacing")} unit="x" min={80} max={200} />
+          <SliderRow
+            label="Line Spacing"
+            value={presenter.lineSpacing ?? 140}
+            onChange={handleSliderChange("lineSpacing")}
+            unit="x"
+            min={80}
+            max={200}
+          />
 
-          <SliderRow label="Paragraph Spacing" value={Math.round((presenter.paragraphSpacing ?? 0.5) * 20)} onChange={(v: number) => handleSliderChange("paragraphSpacing")(v / 20)} unit="em" min={0} max={40} />
+          <SliderRow
+            label="Paragraph Spacing"
+            value={Math.round((presenter.paragraphSpacing ?? 0.5) * 20)}
+            onChange={(v: number) =>
+              handleSliderChange("paragraphSpacing")(v / 20)
+            }
+            unit="em"
+            min={0}
+            max={40}
+          />
 
-          <SliderRow label="Active Line Position" value={presenter.activeLinePosition ?? 35} onChange={handleSliderChange("activeLinePosition")} unit="%" min={10} max={90} />
+          <SliderRow
+            label="Active Line Position"
+            value={presenter.activeLinePosition ?? 35}
+            onChange={handleSliderChange("activeLinePosition")}
+            unit="%"
+            min={10}
+            max={90}
+          />
 
           <SliderRow
             label="Centerline height"
-            value={presenterPreview?.activeLineGuideHeight ?? presenter.activeLineGuideHeight ?? 2}
+            value={
+              presenterPreview?.activeLineGuideHeight ??
+              presenter.activeLineGuideHeight ??
+              2
+            }
             onChange={(v: number) => {
-              setPresenterPreview((p: Partial<PresenterShape> | null) => ({ ...(p || {}), activeLineGuideHeight: v }));
-              try {
-                /* lightweight immediate update handled by parent */
-              } catch (_) {}
+              setPresenterPreview((p: Partial<PresenterShape> | null) => ({
+                ...(p || {}),
+                activeLineGuideHeight: v,
+              }));
             }}
             onChangeEnd={(v) => {
               setPresenterPreview(null);

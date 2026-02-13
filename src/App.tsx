@@ -9,6 +9,7 @@ import { useScripts } from "./hooks/useScripts";
 
 import { AppearanceSettings } from "./types";
 import { useLocalStorageState } from "./hooks/useLocalStorageState";
+import { useLocalStorage } from "./hooks/useLocalStorage";
 import { useInitialPermissionsGate } from "./hooks/useInitialPermissionsGate";
 import { usePresenterBridge } from "./hooks/usePresenterBridge";
 import { useUiStore, DEFAULT_APPEARANCE } from "./stores/ui";
@@ -107,6 +108,7 @@ export default function App() {
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // permission overlay + priming logic extracted into a hook
+  const ls = useLocalStorage();
   const { showOverlay, onOverlayClick } = useInitialPermissionsGate();
 
   // Presenter bridge: message handling, lifecycle polling and small helpers are
@@ -167,37 +169,33 @@ export default function App() {
           let settled = false;
 
           if (on) {
-            const unsub = on('presenter-ready', () => {
+            const unsub = on("presenter-ready", () => {
               settled = true;
-              try { play(); } catch (_) {}
-              try { unsub(); } catch (_) {}
+              play();
+              unsub();
             });
           } else {
             const onMsg = (e: MessageEvent) => {
               if (e.origin !== window.location.origin) return;
-              if (e.data?.type === 'presenter-ready') {
+              if (e.data?.type === "presenter-ready") {
                 settled = true;
-                try { play(); } catch (_) {}
-                window.removeEventListener('message', onMsg);
+                play();
+                window.removeEventListener("message", onMsg);
               }
             };
-            window.addEventListener('message', onMsg);
+            window.addEventListener("message", onMsg);
           }
 
           setTimeout(() => {
-            if (!settled) try { play(); } catch (_) {}
+            if (!settled) play();
           }, 700);
         }
       } else {
-        try {
-          play();
-        } catch (_) {}
+        play();
       }
     } else {
       // stopping microphone — pause presenter (best-effort)
-      try {
-        pause();
-      } catch (_) {}
+      pause();
     }
 
     // Toggle local mic state (this drives the recognition hook)
@@ -217,12 +215,12 @@ export default function App() {
     (newIndex) => {
       setSyncedWordIndex(newIndex);
       // Send to presenter via centralized API
-      try { setWordIndex(newIndex); } catch (_) {}
+      setWordIndex(newIndex);
     },
     // restart (document start)
     () => {
       setSyncedWordIndex(0);
-      try { send({ type: 'prompter-reset' }); } catch (_) {}
+      send({ type: "prompter-reset" });
     },
     // voice-command callbacks — only enable command detection when the *appearance* toggle
     // for Voice Commands is enabled (users expect the toggle to turn commands on/off).
@@ -230,12 +228,12 @@ export default function App() {
       config: presenter.voiceCommands ? voiceCommands : undefined,
       onRetryChapter: (chapterStartWordIndex: number) => {
         setSyncedWordIndex(chapterStartWordIndex);
-        try { setWordIndex(chapterStartWordIndex); } catch (_) {}
+        setWordIndex(chapterStartWordIndex);
       },
       onRestartDocument: () => {
         // alias of the existing restart behavior
         setSyncedWordIndex(0);
-        try { send({ type: 'prompter-reset' }); } catch (_) {}
+        send({ type: "prompter-reset" });
       },
     },
   );
@@ -243,28 +241,21 @@ export default function App() {
   // Broadcast voice-command config to presenter when it changes (so presenter UI can mirror settings)
   // Send `null` when the appearance toggle disables commands so presenter knows commands are OFF.
   React.useEffect(() => {
-    try {
-      send({ type: 'presenter-voice-commands', config: presenter.voiceCommands ? voiceCommands : null });
-    } catch (_) {}
+    send({
+      type: "presenter-voice-commands",
+      config: presenter.voiceCommands ? voiceCommands : null,
+    });
   }, [voiceCommands, presenterState.windowOpen, presenter.voiceCommands]);
   // selectively subscribe instead of receiving many props.
   const patchUiAppearance = useUiStore((s: any) => s.patchAppearance);
   const setUiContentType = useUiStore((s: any) => s.setContentType);
 
   React.useEffect(() => {
-    try {
-      patchUiAppearance(appearance);
-    } catch (_) {
-      /* ignore */
-    }
+    patchUiAppearance(appearance);
   }, [appearance, patchUiAppearance]);
 
   React.useEffect(() => {
-    try {
-      setUiContentType(contentType);
-    } catch (_) {
-      /* ignore */
-    }
+    setUiContentType(contentType);
   }, [contentType, setUiContentType]);
 
   // Sync presenter-initiated wordIndex (user clicked in presenter) -> App state
@@ -401,99 +392,99 @@ export default function App() {
         e.stopPropagation();
 
         const entry = stack.pop()!;
-        try {
-          if (entry.kind === "edit") {
-            // capture current text for redo
-            const current =
-              docs
-                .find((d) => d.id === entry.docId)
-                ?.chapters.find((c) => c.id === entry.chapterId)?.text ?? "";
-            pushRedoEntry({
-              kind: "edit",
-              docId: entry.docId,
-              chapterId: entry.chapterId,
-              before: current,
-              time: Date.now(),
-            });
 
-            // apply previous text without recording
-            updateChapter(entry.docId, entry.chapterId, entry.before);
-            const ta = document.querySelector<HTMLTextAreaElement>(
-              `[data-chapter-textarea="${entry.chapterId}"]`,
+        if (entry.kind === "edit") {
+          // capture current text for redo
+          const current =
+            docs
+              .find((d) => d.id === entry.docId)
+              ?.chapters.find((c) => c.id === entry.chapterId)?.text ?? "";
+          pushRedoEntry({
+            kind: "edit",
+            docId: entry.docId,
+            chapterId: entry.chapterId,
+            before: current,
+            time: Date.now(),
+          });
+
+          // apply previous text without recording
+          updateChapter(entry.docId, entry.chapterId, entry.before);
+          const ta = document.querySelector<HTMLTextAreaElement>(
+            `[data-chapter-textarea="${entry.chapterId}"]`,
+          );
+          if (ta) {
+            ta.focus();
+
+            ta.setSelectionRange(
+              Math.min(entry.before.length, ta.value.length),
+              Math.min(entry.before.length, ta.value.length),
             );
-            if (ta) {
-              ta.focus();
-              try {
-                ta.setSelectionRange(
-                  Math.min(entry.before.length, ta.value.length),
-                  Math.min(entry.before.length, ta.value.length),
-                );
-              } catch (_) {}
+          }
+        } else if (entry.kind === "remove") {
+          // undo a chapter deletion: re-insert at original index and restore text
+          const doc = docs.find((d) => d.id === entry.docId);
+          if (doc) {
+            const insertBefore = doc.chapters[entry.index];
+            let newId: string | undefined;
+            if (insertBefore) {
+              newId = addChapterBefore(entry.docId, insertBefore.id);
+              if (newId) updateChapter(entry.docId, newId, entry.text);
+            } else {
+              newId = addChapter(entry.docId, { text: entry.text });
             }
 
-          } else if (entry.kind === "remove") {
-            // undo a chapter deletion: re-insert at original index and restore text
-            const doc = docs.find((d) => d.id === entry.docId);
-            if (doc) {
-              const insertBefore = doc.chapters[entry.index];
-              let newId: string | undefined;
-              if (insertBefore) {
-                newId = addChapterBefore(entry.docId, insertBefore.id);
-                if (newId) updateChapter(entry.docId, newId, entry.text);
-              } else {
-                newId = addChapter(entry.docId, { text: entry.text });
-              }
+            if (newId) {
+              pushRedoEntry({
+                kind: "remove",
+                docId: entry.docId,
+                chapterId: String(newId),
+                index: entry.index,
+                text: entry.text,
+                time: Date.now(),
+              });
 
-              if (newId) {
-                pushRedoEntry({ kind: "remove", docId: entry.docId, chapterId: String(newId), index: entry.index, text: entry.text, time: Date.now() });
-                try { scriptAreaRef.current?.focusChapter(String(newId)); } catch (_) {}
-              }
-            }
-
-          } else if (entry.kind === "split") {
-            // for split undo: remove inserted chapters and restore the original text
-            // capture the current split parts so redo can reapply them
-            const doc = docs.find((d) => d.id === entry.docId);
-            const first =
-              doc?.chapters.find((c) => c.id === entry.chapterId)?.text ?? "";
-            const insertedTexts = entry.insertedIds.map(
-              (id) => doc?.chapters.find((c) => c.id === id)?.text ?? "",
-            );
-            const partsForRedo = [first, ...insertedTexts];
-            pushRedoEntry({
-              kind: "split",
-              docId: entry.docId,
-              chapterId: entry.chapterId,
-              before: entry.before,
-              insertedIds: entry.insertedIds,
-              parts: partsForRedo,
-              time: Date.now(),
-            });
-
-            // remove inserted chapters
-            for (const id of entry.insertedIds.slice().reverse()) {
-              try {
-                removeChapter(entry.docId, id);
-              } catch (_) {}
-            }
-            // restore original text
-            updateChapter(entry.docId, entry.chapterId, entry.before);
-            const ta = document.querySelector<HTMLTextAreaElement>(
-              `[data-chapter-textarea="${entry.chapterId}"]`,
-            );
-            if (ta) {
-              ta.focus();
-              try {
-                ta.setSelectionRange(
-                  Math.min(entry.before.length, ta.value.length),
-                  Math.min(entry.before.length, ta.value.length),
-                );
-              } catch (_) {}
+              scriptAreaRef.current?.focusChapter(String(newId));
             }
           }
-        } catch (_) {
-          // swallow
+        } else if (entry.kind === "split") {
+          // for split undo: remove inserted chapters and restore the original text
+          // capture the current split parts so redo can reapply them
+          const doc = docs.find((d) => d.id === entry.docId);
+          const first =
+            doc?.chapters.find((c) => c.id === entry.chapterId)?.text ?? "";
+          const insertedTexts = entry.insertedIds.map(
+            (id) => doc?.chapters.find((c) => c.id === id)?.text ?? "",
+          );
+          const partsForRedo = [first, ...insertedTexts];
+          pushRedoEntry({
+            kind: "split",
+            docId: entry.docId,
+            chapterId: entry.chapterId,
+            before: entry.before,
+            insertedIds: entry.insertedIds,
+            parts: partsForRedo,
+            time: Date.now(),
+          });
+
+          // remove inserted chapters
+          for (const id of entry.insertedIds.slice().reverse()) {
+            removeChapter(entry.docId, id);
+          }
+          // restore original text
+          updateChapter(entry.docId, entry.chapterId, entry.before);
+          const ta = document.querySelector<HTMLTextAreaElement>(
+            `[data-chapter-textarea="${entry.chapterId}"]`,
+          );
+          if (ta) {
+            ta.focus();
+
+            ta.setSelectionRange(
+              Math.min(entry.before.length, ta.value.length),
+              Math.min(entry.before.length, ta.value.length),
+            );
+          }
         }
+
         return;
       }
 
@@ -505,89 +496,93 @@ export default function App() {
         e.stopPropagation();
 
         const entry = rstack.pop()!;
-        try {
-          if (entry.kind === "edit") {
-            // capture current for undo
-            const current =
-              docs
-                .find((d) => d.id === entry.docId)
-                ?.chapters.find((c) => c.id === entry.chapterId)?.text ?? "";
-            pushUndoEntry({
-              kind: "edit",
-              docId: entry.docId,
-              chapterId: entry.chapterId,
-              before: current,
-              time: Date.now(),
-            });
 
-            updateChapter(entry.docId, entry.chapterId, entry.before);
-            const ta = document.querySelector<HTMLTextAreaElement>(
-              `[data-chapter-textarea="${entry.chapterId}"]`,
+        if (entry.kind === "edit") {
+          // capture current for undo
+          const current =
+            docs
+              .find((d) => d.id === entry.docId)
+              ?.chapters.find((c) => c.id === entry.chapterId)?.text ?? "";
+          pushUndoEntry({
+            kind: "edit",
+            docId: entry.docId,
+            chapterId: entry.chapterId,
+            before: current,
+            time: Date.now(),
+          });
+
+          updateChapter(entry.docId, entry.chapterId, entry.before);
+          const ta = document.querySelector<HTMLTextAreaElement>(
+            `[data-chapter-textarea="${entry.chapterId}"]`,
+          );
+          if (ta) {
+            ta.focus();
+
+            ta.setSelectionRange(
+              Math.min(entry.before.length, ta.value.length),
+              Math.min(entry.before.length, ta.value.length),
             );
-            if (ta) {
-              ta.focus();
-              try {
-                ta.setSelectionRange(
-                  Math.min(entry.before.length, ta.value.length),
-                  Math.min(entry.before.length, ta.value.length),
-                );
-              } catch (_) {}
-            }
-
-          } else if (entry.kind === 'remove') {
-            // redo a deletion: remove the chapter and push undo snapshot to restore it
-            const doc = docs.find((d) => d.id === entry.docId);
-            if (doc) {
-              const prevText = doc.chapters.find((c) => c.id === entry.chapterId)?.text ?? '';
-              const prevIndex = doc.chapters.findIndex((c) => c.id === entry.chapterId);
-              pushUndoEntry({ kind: 'remove', docId: entry.docId, chapterId: entry.chapterId, index: prevIndex, text: prevText, time: Date.now() });
-              try { removeChapter(entry.docId, entry.chapterId); } catch (_) {}
-            }
-
-          } else if (entry.kind === "split") {
-            // redo the split by re-applying the saved `parts` array (recreate inserted chapters)
-            const parts = Array.isArray(entry.parts) ? entry.parts : null;
-            if (!parts || parts.length <= 1) return;
-
-            // capture state for undo (previous full-text of the chapter)
-            const prev =
-              docs
-                .find((d) => d.id === entry.docId)
-                ?.chapters.find((c) => c.id === entry.chapterId)?.text ?? "";
-            pushUndoEntry({
-              kind: "split",
-              docId: entry.docId,
-              chapterId: entry.chapterId,
-              before: prev,
-              insertedIds: [],
-              parts: [],
-              time: Date.now(),
-            });
-
-            // apply first part and append others
-            updateChapter(entry.docId, entry.chapterId, parts[0]);
-            let prevId = entry.chapterId;
-            for (let i = 1; i < parts.length; i++) {
-              addChapter(entry.docId, { afterId: prevId, text: parts[i] });
-              // we intentionally don't attempt to re-create original IDs — redo will create fresh chapters
-            }
-
-            const ta = document.querySelector<HTMLTextAreaElement>(
-              `[data-chapter-textarea="${entry.chapterId}"]`,
-            );
-            if (ta) {
-              ta.focus();
-              try {
-                ta.setSelectionRange(
-                  Math.min(parts[0].length, ta.value.length),
-                  Math.min(parts[0].length, ta.value.length),
-                );
-              } catch (_) {}
-            }
           }
-        } catch (_) {
-          // swallow
+        } else if (entry.kind === "remove") {
+          // redo a deletion: remove the chapter and push undo snapshot to restore it
+          const doc = docs.find((d) => d.id === entry.docId);
+          if (doc) {
+            const prevText =
+              doc.chapters.find((c) => c.id === entry.chapterId)?.text ?? "";
+            const prevIndex = doc.chapters.findIndex(
+              (c) => c.id === entry.chapterId,
+            );
+            pushUndoEntry({
+              kind: "remove",
+              docId: entry.docId,
+              chapterId: entry.chapterId,
+              index: prevIndex,
+              text: prevText,
+              time: Date.now(),
+            });
+            removeChapter(entry.docId, entry.chapterId);
+          }
+        } else if (entry.kind === "split") {
+          // redo the split by re-applying the saved `parts` array (recreate inserted chapters)
+          const parts = Array.isArray(entry.parts) ? entry.parts : null;
+          if (!parts || parts.length <= 1) return;
+
+          // capture state for undo (previous full-text of the chapter)
+          const prev =
+            docs
+              .find((d) => d.id === entry.docId)
+              ?.chapters.find((c) => c.id === entry.chapterId)?.text ?? "";
+          pushUndoEntry({
+            kind: "split",
+            docId: entry.docId,
+            chapterId: entry.chapterId,
+            before: prev,
+            insertedIds: [],
+            parts: [],
+            time: Date.now(),
+          });
+
+          // apply first part and append others
+          updateChapter(entry.docId, entry.chapterId, parts[0]);
+          const prevId = entry.chapterId;
+          for (let i = 1; i < parts.length; i++) {
+            addChapter(entry.docId, { afterId: prevId, text: parts[i] });
+            // we intentionally don't attempt to re-create original IDs — redo will create fresh chapters
+          }
+
+          const ta = document.querySelector<HTMLTextAreaElement>(
+            `[data-chapter-textarea="${entry.chapterId}"]`,
+          );
+          if (ta) {
+            ta.focus();
+
+            ta.setSelectionRange(
+              Math.min(parts[0].length, ta.value.length),
+              Math.min(parts[0].length, ta.value.length),
+            );
+          }
         }
+
         return;
       }
     }
@@ -601,11 +596,8 @@ export default function App() {
     React.useState<boolean>(false);
 
   function hidePermissionOverlay() {
-    try {
-      localStorage.setItem("smui.initialPermissionsRequested", "1");
-    } catch (err) {
-      /* ignore */
-    }
+    ls.setRaw("smui.initialPermissionsRequested", "1");
+
     setShowPermissionOverlay(false);
   }
 
@@ -616,16 +608,15 @@ export default function App() {
     (async () => {
       try {
         // dev override for testing
-        try {
-          if (localStorage.getItem("smui.forceShowPermissionOverlay") === "1") {
-            if (!mounted) return;
-            setShowPermissionOverlay(true);
-            return;
-          }
-        } catch (_) {}
+
+        if (ls.getRaw("smui.forceShowPermissionOverlay") === "1") {
+          if (!mounted) return;
+          setShowPermissionOverlay(true);
+          return;
+        }
 
         const alreadyAsked = Boolean(
-          localStorage.getItem("smui.initialPermissionsRequested"),
+          ls.getRaw("smui.initialPermissionsRequested"),
         );
         let micGranted = false;
         try {
@@ -649,7 +640,7 @@ export default function App() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [ls]);
 
   // Handler used by the overlay — runs inside the user's click event so
   // browsers will treat permission API calls as gesture-primed.
@@ -663,20 +654,14 @@ export default function App() {
     const y = (e as any).clientY ?? window.innerHeight / 2;
 
     // Start permission requests synchronously (gesture-primed). Don't await.
-    try {
-      (
-        navigator.mediaDevices.getUserMedia({
-          audio: true,
-        }) as Promise<MediaStream>
-      ).catch(() => {});
-    } catch (_) {
-      /* ignore */
-    }
-    try {
-      (window as any).getScreenDetails?.().catch(() => {});
-    } catch (_) {
-      /* ignore */
-    }
+
+    (
+      navigator.mediaDevices.getUserMedia({
+        audio: true,
+      }) as Promise<MediaStream>
+    ).catch(() => {});
+
+    (window as any).getScreenDetails?.().catch(() => {});
 
     // Temporarily allow pointer-events through so we can forward the click to
     // the underlying element the user actually intended to click.
@@ -690,17 +675,13 @@ export default function App() {
           // as if the overlay wasn't present.
           underlying.click();
         } catch (_) {
-          try {
-            underlying.dispatchEvent(
-              new MouseEvent("click", {
-                bubbles: true,
-                clientX: x,
-                clientY: y,
-              }),
-            );
-          } catch (_) {
-            /* ignore */
-          }
+          underlying.dispatchEvent(
+            new MouseEvent("click", {
+              bubbles: true,
+              clientX: x,
+              clientY: y,
+            }),
+          );
         }
       }
       // restore pointer-events (we'll hide the overlay shortly)
@@ -710,11 +691,8 @@ export default function App() {
     // hide overlay after a short delay so the forwarded click can run
     setTimeout(() => {
       hidePermissionOverlay();
-      try {
-        window.dispatchEvent(new Event("smui.permissions-updated"));
-      } catch (_) {
-        /* ignore */
-      }
+
+      window.dispatchEvent(new Event("smui.permissions-updated"));
     }, 250);
   }
 
@@ -726,7 +704,7 @@ export default function App() {
     // otherwise fall back to the primary screen.
     const persisted = (() => {
       try {
-        return localStorage.getItem("smui.presenter.targetScreen");
+        return ls.getRaw("smui.presenter.targetScreen");
       } catch {
         return null;
       }
@@ -742,39 +720,35 @@ export default function App() {
       label: `Primary — ${window.screen.width}×${window.screen.height}`,
     } as any;
 
-    try {
-      const details = await (window as any).getScreenDetails?.();
-      const screensList: any[] = details?.screens ?? [];
-      if (persisted && screensList.length) {
-        const match = screensList.find(
-          (s: any) =>
-            (s.label || "").toString() === persisted ||
-            String(s.id) === persisted,
-        );
-        if (match)
-          chosenScreen = {
-            id: String(match.id ?? 0),
-            left: Number(match.left ?? 0),
-            top: Number(match.top ?? 0),
-            width: Number(match.width ?? window.screen.width),
-            height: Number(match.height ?? window.screen.height),
-            isPrimary: Boolean(match.isPrimary),
-            label: match.label ?? `Display — ${match.width}×${match.height}`,
-          };
-      } else if (screensList.length) {
-        const s = screensList[0];
+    const details = await (window as any).getScreenDetails?.();
+    const screensList: any[] = details?.screens ?? [];
+    if (persisted && screensList.length) {
+      const match = screensList.find(
+        (s: any) =>
+          (s.label || "").toString() === persisted ||
+          String(s.id) === persisted,
+      );
+      if (match)
         chosenScreen = {
-          id: String(s.id ?? 0),
-          left: Number(s.left ?? 0),
-          top: Number(s.top ?? 0),
-          width: Number(s.width ?? window.screen.width),
-          height: Number(s.height ?? window.screen.height),
-          isPrimary: Boolean(s.isPrimary),
-          label: s.label ?? `Display — ${s.width}×${s.height}`,
+          id: String(match.id ?? 0),
+          left: Number(match.left ?? 0),
+          top: Number(match.top ?? 0),
+          width: Number(match.width ?? window.screen.width),
+          height: Number(match.height ?? window.screen.height),
+          isPrimary: Boolean(match.isPrimary),
+          label: match.label ?? `Display — ${match.width}×${match.height}`,
         };
-      }
-    } catch (err) {
-      // fall back to primary screen above
+    } else if (screensList.length) {
+      const s = screensList[0];
+      chosenScreen = {
+        id: String(s.id ?? 0),
+        left: Number(s.left ?? 0),
+        top: Number(s.top ?? 0),
+        width: Number(s.width ?? window.screen.width),
+        height: Number(s.height ?? window.screen.height),
+        isPrimary: Boolean(s.isPrimary),
+        label: s.label ?? `Display — ${s.width}×${s.height}`,
+      };
     }
 
     try {
@@ -786,7 +760,10 @@ export default function App() {
       });
 
       setTimeout(() => {
-        try { send({ type: 'hold-for-enter', rotate: Boolean(presenter?.rotateScreen) }); } catch (_) {}
+        send({
+          type: "hold-for-enter",
+          rotate: Boolean(presenter?.rotateScreen),
+        });
       }, 700);
       return win;
     } catch (err) {
@@ -798,12 +775,9 @@ export default function App() {
   async function onPlayFromEditor() {
     const existing = presenterWindowRef.current;
     if (existing && !existing.closed) {
-      try {
-        if (presenterIsPlaying) pause(); else play();
-        return;
-      } catch (err) {
-        /* ignore */
-      }
+      if (presenterIsPlaying) pause();
+      else play();
+      return;
     }
 
     // fallback: open the presenter if not attached — auto-start when ready
@@ -813,27 +787,27 @@ export default function App() {
     let settled = false;
 
     if (on) {
-      const unsub = on('presenter-ready', () => {
+      const unsub = on("presenter-ready", () => {
         settled = true;
-        try { play(); } catch (_) {}
-        try { unsub(); } catch (_) {}
+        play();
+        unsub();
       });
     } else {
       function onMsgOnce(e: MessageEvent) {
         if (e.origin !== window.location.origin) return;
-        if (e.data?.type === 'presenter-ready') {
+        if (e.data?.type === "presenter-ready") {
           settled = true;
-          try { play(); } catch (_) {}
-          window.removeEventListener('message', onMsgOnce);
+          play();
+          window.removeEventListener("message", onMsgOnce);
         }
       }
-      window.addEventListener('message', onMsgOnce);
+      window.addEventListener("message", onMsgOnce);
     }
 
     // fallback: try to kick-play after a short delay in case presenter doesn't reply
     setTimeout(() => {
       if (settled) return;
-      try { play(); } catch (_) {}
+      play();
     }, 700);
   }
 
@@ -847,20 +821,16 @@ export default function App() {
       // measure on next animation frames so layout/fullscreen styles settle
       requestAnimationFrame(() =>
         requestAnimationFrame(() => {
-          try {
-            const measured = scriptAreaRef.current?.measureContentWidth?.();
-            if (measured) {
-              const [contentPx, containerPx] = measured;
-              if (containerPx > 0) {
-                const newPct = Math.min(
-                  100,
-                  Math.max(30, Math.round((contentPx / containerPx) * 100)),
-                );
-                updateAppearance({ editor: { ...editor, width: newPct } });
-              }
+          const measured = scriptAreaRef.current?.measureContentWidth?.();
+          if (measured) {
+            const [contentPx, containerPx] = measured;
+            if (containerPx > 0) {
+              const newPct = Math.min(
+                100,
+                Math.max(30, Math.round((contentPx / containerPx) * 100)),
+              );
+              updateAppearance({ editor: { ...editor, width: newPct } });
             }
-          } catch (err) {
-            // measurement failed — ignore silently
           }
         }),
       );
@@ -963,9 +933,7 @@ export default function App() {
       redoStackRef.current = [];
 
       // keep user focus on the source (split) chapter
-      try {
-        scriptAreaRef.current?.focusChapter(chapterId);
-      } catch (_) {}
+      scriptAreaRef.current?.focusChapter(chapterId);
       return newId;
     } catch (err) {
       return undefined;
@@ -1029,11 +997,7 @@ export default function App() {
                 !presenterWindowRef.current.closed
               ) {
                 if (presenterDisplayedDocRef.current === activeDocId) {
-                  try {
-                    send({ type: 'update-chapter', chapterId, text });
-                  } catch (err) {
-                    /* ignore */
-                  }
+                  send({ type: "update-chapter", chapterId, text });
                 }
               }
             }}
@@ -1046,32 +1010,25 @@ export default function App() {
                 presenterWindowRef.current &&
                 !presenterWindowRef.current.closed
               ) {
-                try {
-                  // Ensure presenter is displaying the same doc first — if not, send the doc
-                  if (
-                    presenterDisplayedDocRef.current !== activeDocId &&
-                    activeDoc
-                  ) {
-                    try {
-                      send({ type: 'presenter-load-doc', doc: activeDoc });
-                    } catch (_) {}
-                    // small delay to let the presenter process the load-doc message
-                    setTimeout(() => {
-                      try {
-                        gotoChapter(chapterId);
-                      } catch (_) {}
-                    }, 120);
-                  } else {
-                    try { gotoChapter(chapterId); } catch (_) {}
-                  }
-                } catch (_) {}
+                // Ensure presenter is displaying the same doc first — if not, send the doc
+                if (
+                  presenterDisplayedDocRef.current !== activeDocId &&
+                  activeDoc
+                ) {
+                  send({ type: "presenter-load-doc", doc: activeDoc });
+                  // small delay to let the presenter process the load-doc message
+                  setTimeout(() => {
+                    gotoChapter(chapterId);
+                  }, 120);
+                } else {
+                  gotoChapter(chapterId);
+                }
+
                 return;
               }
 
               // Otherwise, open the presenter and retry until the window appears (safe, short-lived retries).
-              try {
-                onOpenTeleprompterFromEditor();
-              } catch (_) {}
+              onOpenTeleprompterFromEditor();
 
               const start = Date.now();
               const timeout = 2500; // ms
@@ -1080,18 +1037,14 @@ export default function App() {
               (function poll() {
                 const win = presenterWindowRef.current;
                 if (win && !win.closed) {
-                  try {
-                    gotoChapter(chapterId);
-                  } catch (_) {}
+                  gotoChapter(chapterId);
                   return;
                 }
                 if (Date.now() - start > timeout) {
                   // give up; optional: surface a small notice
-                  try {
-                    console.warn(
-                      "Presenter did not open in time to jump to chapter",
-                    );
-                  } catch (_) {}
+                  console.warn(
+                    "Presenter did not open in time to jump to chapter",
+                  );
                   return;
                 }
                 setTimeout(poll, interval);
@@ -1122,43 +1075,56 @@ export default function App() {
               // make delete undoable: capture chapter text + index, push RemoveEntry, then remove
               try {
                 const doc = docs.find((d) => d.id === activeDocId);
-                const idx = doc?.chapters.findIndex((c) => c.id === chapterId) ?? -1;
-                const txt = doc?.chapters.find((c) => c.id === chapterId)?.text ?? "";
+                const idx =
+                  doc?.chapters.findIndex((c) => c.id === chapterId) ?? -1;
+                const txt =
+                  doc?.chapters.find((c) => c.id === chapterId)?.text ?? "";
 
                 // pick a sensible target to focus after removal (next chapter, else previous)
                 const focusId =
                   idx !== -1
-                    ? doc?.chapters[idx + 1]?.id ?? doc?.chapters[idx - 1]?.id ?? null
+                    ? (doc?.chapters[idx + 1]?.id ??
+                      doc?.chapters[idx - 1]?.id ??
+                      null)
                     : null;
 
                 if (idx !== -1) {
-                  pushUndoEntry({ kind: 'remove', docId: activeDocId, chapterId, index: idx, text: txt, time: Date.now() });
+                  pushUndoEntry({
+                    kind: "remove",
+                    docId: activeDocId,
+                    chapterId,
+                    index: idx,
+                    text: txt,
+                    time: Date.now(),
+                  });
                 }
 
                 // perform removal
                 removeChapter(activeDocId, chapterId);
 
                 // structural change invalidates redo for this doc
-                redoStackRef.current = redoStackRef.current.filter((e) => e.docId !== activeDocId);
+                redoStackRef.current = redoStackRef.current.filter(
+                  (e) => e.docId !== activeDocId,
+                );
 
                 // keep focus inside the editor so global Undo (Cmd/Ctrl+Z) will work immediately
                 if (focusId) {
-                  try {
-                    scriptAreaRef.current?.focusChapter(String(focusId));
-                  } catch (_) {}
+                  scriptAreaRef.current?.focusChapter(String(focusId));
                 } else {
                   // if no chapter remains, focus the first textarea if present (best-effort)
                   setTimeout(() => {
-                    try {
-                      const ta = document.querySelector<HTMLTextAreaElement>("textarea[data-chapter-textarea]");
-                      ta?.focus();
-                    } catch (_) {}
+                    const ta = document.querySelector<HTMLTextAreaElement>(
+                      "textarea[data-chapter-textarea]",
+                    );
+                    ta?.focus();
                   }, 0);
                 }
               } catch (_) {
                 // best-effort fallback: remove and clear redo
-                try { removeChapter(activeDocId, chapterId); } catch (_) {}
-                redoStackRef.current = redoStackRef.current.filter((e) => e.docId !== activeDocId);
+                removeChapter(activeDocId, chapterId);
+                redoStackRef.current = redoStackRef.current.filter(
+                  (e) => e.docId !== activeDocId,
+                );
               }
             }}
             onMoveChapter={(chapterId: string, toIndex: number) => {
@@ -1179,7 +1145,7 @@ export default function App() {
             onToggleMic={handleToggleMic}
             onRestart={() => {
               setSyncedWordIndex(0);
-              try { setWordIndex(0); } catch (_) {}
+              setWordIndex(0);
             }}
           />
         }
@@ -1246,11 +1212,10 @@ export default function App() {
                   redoStackRef.current = [];
 
                   // focus the source (split) chapter in the editor so user stays in context
-                  try {
-                    scriptAreaRef.current?.focusChapter(chapterId);
-                  } catch (_) {}
+                  scriptAreaRef.current?.focusChapter(chapterId);
                 } catch (err) {
-                  /* ignore */
+                  // previously intentionally empty — now logged for visibility
+                  console.debug("[auto] swallowed error", err);
                 } finally {
                   setCtx((p) => ({ ...p, open: false }));
                 }

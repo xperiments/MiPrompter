@@ -19,24 +19,35 @@ function createSignalingServer(server: ViteDevServer) {
 
   function mergeRoomState(roomId: string | undefined, data: any) {
     if (!roomId) return;
-    const prev = roomStates.get(roomId) || { payload: {}, playing: false, mic: false, wordIndex: 0 };
+    const prev = roomStates.get(roomId) || {
+      payload: {},
+      playing: false,
+      mic: false,
+      wordIndex: 0,
+    };
     const next = { ...prev } as any;
-    try {
-      if (data.type === "presenter-load-doc" && data.doc) {
-        next.payload = { ...(next.payload || {}), doc: data.doc };
-        next.payload.docId = data.doc?.id || next.payload.docId;
-      } else if (data.type === "set-params") {
-        next.payload = { ...(next.payload || {}), ...(data) };
-      } else if (data.type === "presenter-playing") {
-        next.playing = Boolean(data.playing);
-      } else if (data.type === "presenter-mic") {
-        next.mic = Boolean(data.active);
-      } else if (data.type === "presenter-word-index") {
-        next.wordIndex = Number(data.index || 0);
-      } else if (data.type === "appearance-update" || data.appearance) {
-        next.payload = { ...(next.payload || {}), appearance: { ...(next.payload?.appearance || {}), ...(data.appearance || {}) } };
-      }
-    } catch (_) {}
+
+    if (data.type === "presenter-load-doc" && data.doc) {
+      next.payload = { ...(next.payload || {}), doc: data.doc };
+      next.payload.docId = data.doc?.id || next.payload.docId;
+    } else if (data.type === "set-params") {
+      next.payload = { ...(next.payload || {}), ...data };
+    } else if (data.type === "presenter-playing") {
+      next.playing = Boolean(data.playing);
+    } else if (data.type === "presenter-mic") {
+      next.mic = Boolean(data.active);
+    } else if (data.type === "presenter-word-index") {
+      next.wordIndex = Number(data.index || 0);
+    } else if (data.type === "appearance-update" || data.appearance) {
+      next.payload = {
+        ...(next.payload || {}),
+        appearance: {
+          ...(next.payload?.appearance || {}),
+          ...(data.appearance || {}),
+        },
+      };
+    }
+
     roomStates.set(roomId, next);
   }
 
@@ -54,9 +65,9 @@ function createSignalingServer(server: ViteDevServer) {
     const set = rooms.get(room);
     if (set) {
       set.delete(ws);
-      if (set.size === 0) rooms.delete(room);
-      else // eslint-disable-next-line no-console
-        console.log(`[ws] leave room="${room}" clients=${set.size}`);
+      if (set.size === 0)
+        rooms.delete(room); // eslint-disable-next-line no-console
+      else console.log(`[ws] leave room="${room}" clients=${set.size}`);
     }
     ws._room = null;
   }
@@ -64,9 +75,13 @@ function createSignalingServer(server: ViteDevServer) {
   function broadcastToRoom(room: string, senderWs: any, msgObj: any) {
     const set = rooms.get(room);
     if (!set) return;
-    const recipients = Array.from(set).filter((c) => c !== senderWs && c.readyState === 1).length;
+    const recipients = Array.from(set).filter(
+      (c) => c !== senderWs && c.readyState === 1,
+    ).length;
     // eslint-disable-next-line no-console
-    console.log(`[ws] relay type=${msgObj.type} room="${room}" -> ${recipients} recipients`);
+    console.log(
+      `[ws] relay type=${msgObj.type} room="${room}" -> ${recipients} recipients`,
+    );
     const data = JSON.stringify(msgObj);
     for (const client of set) {
       if (client !== senderWs && client.readyState === 1) {
@@ -91,7 +106,9 @@ function createSignalingServer(server: ViteDevServer) {
   const wss = new WebSocketServer({ noServer: true });
   server.httpServer?.on("upgrade", (req, socket, head) => {
     if (req.url === "/ws" || req.url === "/socket") {
-      wss.handleUpgrade(req, socket as any, head, (ws) => wss.emit("connection", ws, req));
+      wss.handleUpgrade(req, socket as any, head, (ws) =>
+        wss.emit("connection", ws, req),
+      );
     }
   });
 
@@ -122,7 +139,10 @@ function createSignalingServer(server: ViteDevServer) {
 
         // if we have cached state for the room, send it to the joining client
         const cached = roomStates.get(msg.room);
-        if (cached) try { ws.send(JSON.stringify({ type: 'state', room: msg.room, data: cached })); } catch (_) {}
+        if (cached)
+          ws.send(
+            JSON.stringify({ type: "state", room: msg.room, data: cached }),
+          );
         return;
       }
 
@@ -139,7 +159,11 @@ function createSignalingServer(server: ViteDevServer) {
         // presenter-open: app -> phone (contains url + optional `to` id)
         // presenter-share-invite: app -> phone (contains room id for screen-share)
         // eslint-disable-next-line no-console
-        console.log('[ws] pairing relay', msg.type, msg.id || msg.to || msg.room || '—');
+        console.log(
+          "[ws] pairing relay",
+          msg.type,
+          msg.id || msg.to || msg.room || "—",
+        );
         const payload = JSON.stringify(msg);
         for (const client of wss.clients) {
           if (client !== ws && client.readyState === 1) client.send(payload);
@@ -148,27 +172,38 @@ function createSignalingServer(server: ViteDevServer) {
       }
 
       // ---- support for cached room state + signaling messages (standalone mock parity) ----
-      if (msg.type === 'get-state' && typeof msg.room === 'string') {
+      if (msg.type === "get-state" && typeof msg.room === "string") {
         const cached = roomStates.get(msg.room) || null;
-        try { ws.send(JSON.stringify({ type: 'state', room: msg.room, data: cached })); } catch (_) {}
+
+        ws.send(
+          JSON.stringify({ type: "state", room: msg.room, data: cached }),
+        );
+
         return;
       }
 
-      if (msg.type === 'signal' && typeof msg.room === 'string') {
+      if (msg.type === "signal" && typeof msg.room === "string") {
         if (ws._room !== msg.room) {
           ws.send(JSON.stringify({ type: "error", error: "Join room first" }));
           return;
         }
         // merge into cached room state and broadcast as `signal` (payload in `data`)
-        try { mergeRoomState(msg.room, msg.data); } catch (_) {}
-        broadcastToRoom(msg.room, ws, { type: 'signal', data: msg.data });
+
+        mergeRoomState(msg.room, msg.data);
+
+        broadcastToRoom(msg.room, ws, { type: "signal", data: msg.data });
         return;
       }
 
       const room = ws._room;
       if (!room) return;
 
-      if (msg.type === "offer" || msg.type === "answer" || msg.type === "ice" || msg.type === "target") {
+      if (
+        msg.type === "offer" ||
+        msg.type === "answer" ||
+        msg.type === "ice" ||
+        msg.type === "target"
+      ) {
         broadcastToRoom(room, ws, msg);
         return;
       }
@@ -199,10 +234,7 @@ const devSignalingPlugin = !process.env.MOCK_WS_PORT
   : undefined;
 
 export default defineConfig({
-  plugins: [
-    react(),
-    ...(devSignalingPlugin ? [devSignalingPlugin] : []),
-  ],
+  plugins: [react(), ...(devSignalingPlugin ? [devSignalingPlugin] : [])],
   server: {
     // accept external hosts (CodeSandbox, ngrok, etc.) and prefer PORT from env
     host: true,

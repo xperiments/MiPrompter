@@ -1,43 +1,44 @@
-import { useState, useEffect, useRef } from 'react';
-import type { ScreenInfo } from '../lib/presenter';
+import { useState, useEffect, useRef } from "react";
+import type { ScreenInfo } from "../lib/presenter";
 
-const SCREEN_STORAGE_KEY = 'smui.presenter.targetScreen';
+const SCREEN_STORAGE_KEY = "smui.presenter.targetScreen";
+
+import { lsGet, lsSet } from "../lib/local-storage";
 
 function getStoredScreen(): string | null {
-  try {
-    return localStorage.getItem(SCREEN_STORAGE_KEY);
-  } catch {
-    return null;
-  }
+  return lsGet(SCREEN_STORAGE_KEY);
 }
 
 function persistScreen(label: string): void {
-  try {
-    localStorage.setItem(SCREEN_STORAGE_KEY, label);
-  } catch {
-    // Ignore storage errors
-  }
+  lsSet(SCREEN_STORAGE_KEY, label);
 }
 
 function getPrimaryScreenLabel(): string {
   return `Primary — ${window.screen.width}×${window.screen.height}`;
 }
 
-function selectPreferredScreen(screens: ScreenInfo[], storedLabel: string | null): ScreenInfo {
+function selectPreferredScreen(
+  screens: ScreenInfo[],
+  storedLabel: string | null,
+): ScreenInfo {
   if (storedLabel) {
-    const fromStore = screens.find((s) => s.id === storedLabel || s.label === storedLabel);
+    const fromStore = screens.find(
+      (s) => s.id === storedLabel || s.label === storedLabel,
+    );
     if (fromStore) return fromStore;
   }
-  
+
   const primary = screens.find((s) => s.isPrimary);
   if (primary) return primary;
-  
-  return screens.reduce((a, b) => (a.width * a.height > b.width * b.height ? a : b));
+
+  return screens.reduce((a, b) =>
+    a.width * a.height > b.width * b.height ? a : b,
+  );
 }
 
 export function useScreenDetection() {
   const [screens, setScreens] = useState<ScreenInfo[]>([]);
-  const [selectedScreenLabel, setSelectedScreenLabel] = useState<string>('');
+  const [selectedScreenLabel, setSelectedScreenLabel] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const storedScreenRef = useRef<string | null>(getStoredScreen());
@@ -45,31 +46,44 @@ export function useScreenDetection() {
   async function detectScreens() {
     setError(null);
     setLoading(true);
-    
+
     try {
       const details = await (window as any).getScreenDetails?.();
-      
-      if (details?.screens && Array.isArray(details.screens) && details.screens.length > 0) {
+
+      if (
+        details?.screens &&
+        Array.isArray(details.screens) &&
+        details.screens.length > 0
+      ) {
         const current = details.currentScreen ?? null;
 
         const list: ScreenInfo[] = details.screens.map((s: any, i: number) => {
           const left = Number(s.left ?? s.availLeft ?? 0);
           const top = Number(s.top ?? s.availTop ?? 0);
           const width = Number(s.width ?? s.availWidth ?? window.screen.width);
-          const height = Number(s.height ?? s.availHeight ?? window.screen.height);
+          const height = Number(
+            s.height ?? s.availHeight ?? window.screen.height,
+          );
 
           // Prefer explicit `isPrimary` when provided by the UA.
           // If `currentScreen` is available from ScreenDetails, prefer that as the primary
           // (this is the screen containing the browsing context). Otherwise fall back to
           // heuristics (position at 0,0 or matching window.screen size).
           const matchesCurrent = current
-            ? (Number(current.left ?? current.availLeft ?? 0) === left &&
-               Number(current.top ?? current.availTop ?? 0) === top &&
-               Number(current.width ?? current.availWidth ?? window.screen.width) === width &&
-               Number(current.height ?? current.availHeight ?? window.screen.height) === height)
+            ? Number(current.left ?? current.availLeft ?? 0) === left &&
+              Number(current.top ?? current.availTop ?? 0) === top &&
+              Number(
+                current.width ?? current.availWidth ?? window.screen.width,
+              ) === width &&
+              Number(
+                current.height ?? current.availHeight ?? window.screen.height,
+              ) === height
             : false;
 
-          const inferredPrimary = matchesCurrent || (left === 0 && top === 0) || (width === window.screen.width && height === window.screen.height);
+          const inferredPrimary =
+            matchesCurrent ||
+            (left === 0 && top === 0) ||
+            (width === window.screen.width && height === window.screen.height);
 
           return {
             id: String(i),
@@ -78,45 +92,54 @@ export function useScreenDetection() {
             width,
             height,
             isPrimary: Boolean(s.isPrimary) || inferredPrimary,
-            label: s.label ?? `Display ${i + 1} — ${Math.round(width)}×${Math.round(height)}`,
+            label:
+              s.label ??
+              `Display ${i + 1} — ${Math.round(width)}×${Math.round(height)}`,
           };
         });
 
         setScreens(list);
         // Prefer the currently-selected label (if still valid), otherwise fall
         // back to persisted preference and finally to primary/largest.
-        const preferredLabel = selectedScreenLabel || storedScreenRef.current || null;
+        const preferredLabel =
+          selectedScreenLabel || storedScreenRef.current || null;
         const preferred = selectPreferredScreen(list, preferredLabel);
         setSelectedScreenLabel(preferred.label);
       } else {
         // Fallback to primary screen
         const primaryLabel = getPrimaryScreenLabel();
-        setScreens([{
-          id: '0',
+        setScreens([
+          {
+            id: "0",
+            left: 0,
+            top: 0,
+            width: window.screen.width,
+            height: window.screen.height,
+            isPrimary: true,
+            label: primaryLabel,
+          },
+        ]);
+        // don't clobber an in-memory selection if one exists — prefer it, then stored value
+        setSelectedScreenLabel(
+          selectedScreenLabel || (storedScreenRef.current ?? primaryLabel),
+        );
+      }
+    } catch (err: any) {
+      setError(String(err?.message ?? err ?? "Failed to enumerate screens"));
+
+      // Fallback to primary screen on error
+      const primaryLabel = getPrimaryScreenLabel();
+      setScreens([
+        {
+          id: "0",
           left: 0,
           top: 0,
           width: window.screen.width,
           height: window.screen.height,
           isPrimary: true,
           label: primaryLabel,
-        }]);
-        // don't clobber an in-memory selection if one exists — prefer it, then stored value
-        setSelectedScreenLabel(selectedScreenLabel || (storedScreenRef.current ?? primaryLabel));
-      }
-    } catch (err: any) {
-      setError(String(err?.message ?? err ?? 'Failed to enumerate screens'));
-      
-      // Fallback to primary screen on error
-      const primaryLabel = getPrimaryScreenLabel();
-      setScreens([{
-        id: '0',
-        left: 0,
-        top: 0,
-        width: window.screen.width,
-        height: window.screen.height,
-        isPrimary: true,
-        label: primaryLabel,
-      }]);
+        },
+      ]);
       setSelectedScreenLabel(storedScreenRef.current ?? primaryLabel);
     } finally {
       setLoading(false);
@@ -131,9 +154,15 @@ export function useScreenDetection() {
       detectScreens();
     }
 
-    window.addEventListener('smui.permissions-updated', handlePermissionsUpdate);
+    window.addEventListener(
+      "smui.permissions-updated",
+      handlePermissionsUpdate,
+    );
     return () => {
-      window.removeEventListener('smui.permissions-updated', handlePermissionsUpdate);
+      window.removeEventListener(
+        "smui.permissions-updated",
+        handlePermissionsUpdate,
+      );
     };
   }, []);
 
@@ -142,9 +171,7 @@ export function useScreenDetection() {
   useEffect(() => {
     if (selectedScreenLabel) {
       persistScreen(selectedScreenLabel);
-      try {
-        storedScreenRef.current = selectedScreenLabel;
-      } catch (_) {}
+      storedScreenRef.current = selectedScreenLabel;
     }
   }, [selectedScreenLabel]);
 

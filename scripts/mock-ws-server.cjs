@@ -20,24 +20,35 @@ const roomStates = new Map();
 
 function mergeRoomState(roomId, data) {
   if (!roomId) return;
-  const prev = roomStates.get(roomId) || { payload: {}, playing: false, mic: false, wordIndex: 0 };
+  const prev = roomStates.get(roomId) || {
+    payload: {},
+    playing: false,
+    mic: false,
+    wordIndex: 0,
+  };
   const next = { ...prev };
-  try {
-    if (data.type === 'presenter-load-doc' && data.doc) {
-      next.payload = { ...(next.payload || {}), doc: data.doc };
-      next.payload.docId = data.doc?.id || next.payload.docId;
-    } else if (data.type === 'set-params') {
-      next.payload = { ...(next.payload || {}), ...(data) };
-    } else if (data.type === 'presenter-playing') {
-      next.playing = Boolean(data.playing);
-    } else if (data.type === 'presenter-mic') {
-      next.mic = Boolean(data.active);
-    } else if (data.type === 'presenter-word-index') {
-      next.wordIndex = Number(data.index || 0);
-    } else if (data.type === 'appearance-update' || data.appearance) {
-      next.payload = { ...(next.payload || {}), appearance: { ...(next.payload?.appearance || {}), ...(data.appearance || {}) } };
-    }
-  } catch (_) {}
+
+  if (data.type === "presenter-load-doc" && data.doc) {
+    next.payload = { ...(next.payload || {}), doc: data.doc };
+    next.payload.docId = data.doc?.id || next.payload.docId;
+  } else if (data.type === "set-params") {
+    next.payload = { ...(next.payload || {}), ...data };
+  } else if (data.type === "presenter-playing") {
+    next.playing = Boolean(data.playing);
+  } else if (data.type === "presenter-mic") {
+    next.mic = Boolean(data.active);
+  } else if (data.type === "presenter-word-index") {
+    next.wordIndex = Number(data.index || 0);
+  } else if (data.type === "appearance-update" || data.appearance) {
+    next.payload = {
+      ...(next.payload || {}),
+      appearance: {
+        ...(next.payload?.appearance || {}),
+        ...(data.appearance || {}),
+      },
+    };
+  }
+
   roomStates.set(roomId, next);
 }
 
@@ -86,14 +97,20 @@ wss.on("connection", (ws) => {
       ws.send(JSON.stringify({ type: "joined", room: msg.room }));
       // send cached state to joining peer
       const cached = roomStates.get(msg.room);
-      if (cached) try { ws.send(JSON.stringify({ type: 'state', room: msg.room, data: cached })); } catch (_) {}
+      if (cached)
+        ws.send(
+          JSON.stringify({ type: "state", room: msg.room, data: cached }),
+        );
+
       broadcastToRoom(ws, { type: "peer-joined" });
       return;
     }
 
-    if (msg.type === 'get-state' && typeof msg.room === 'string') {
+    if (msg.type === "get-state" && typeof msg.room === "string") {
       const cached = roomStates.get(msg.room) || null;
-      try { ws.send(JSON.stringify({ type: 'state', room: msg.room, data: cached })); } catch (_) {}
+
+      ws.send(JSON.stringify({ type: "state", room: msg.room, data: cached }));
+
       return;
     }
 
@@ -103,7 +120,9 @@ wss.on("connection", (ws) => {
         return;
       }
       // merge into cached room state
-      try { mergeRoomState(msg.room, msg.data); } catch (_) {}
+
+      mergeRoomState(msg.room, msg.data);
+
       broadcastToRoom(ws, { type: "signal", data: msg.data });
       return;
     }
@@ -124,14 +143,14 @@ preferred.push(3000, 5137);
 
 function tryListen(ports) {
   const port = ports.shift();
-  if (typeof port !== 'number') {
+  if (typeof port !== "number") {
     // fallback to ephemeral port
     server.listen(0);
     return;
   }
 
-  server.once('error', (err) => {
-    if (err && err.code === 'EADDRINUSE') {
+  server.once("error", (err) => {
+    if (err && err.code === "EADDRINUSE") {
       console.warn(`Port ${port} in use — trying next port`);
       tryListen(ports);
     } else {
@@ -140,12 +159,14 @@ function tryListen(ports) {
     }
   });
 
-  server.once('listening', () => {
+  server.once("listening", () => {
     const addr = server.address();
-    if (!addr) return console.log('Listening');
-    if (typeof addr === 'string') return console.log('Listening on', addr);
+    if (!addr) return console.log("Listening");
+    if (typeof addr === "string") return console.log("Listening on", addr);
     const p = addr.port;
-    console.log(`Listening on port ${p} — http://localhost${p}/  ws://localhost${p}/ws`);
+    console.log(
+      `Listening on port ${p} — http://localhost${p}/  ws://localhost${p}/ws`,
+    );
   });
 
   server.listen(port);

@@ -94,7 +94,7 @@ function parseScriptToTokens(
   preserveFormatting: boolean,
 ): Token[] {
   if (!doc || !doc.chapters) return [];
-  let tokens: Token[] = [];
+  const tokens: Token[] = [];
   let globalWordIndex = 0;
 
   doc.chapters.forEach((chapter, chIdx) => {
@@ -308,7 +308,7 @@ function PrompterView({
         (parent.scrollTop || 0);
 
       // Compute new scrollTop to place element center at desiredPx
-      let targetScrollTop = Math.max(
+      const targetScrollTop = Math.max(
         0,
         Math.round(elCenterRelativeToParent - desiredPx),
       );
@@ -324,13 +324,12 @@ function PrompterView({
       }
     } catch (err) {
       // Fallback to a safe scrollIntoView if anything fails
-      try {
-        el.scrollIntoView({
-          behavior: appearance.smoothAnimations ? "smooth" : "auto",
-          block: "center",
-          inline: "nearest",
-        });
-      } catch (_) {}
+
+      el.scrollIntoView({
+        behavior: appearance.smoothAnimations ? "smooth" : "auto",
+        block: "center",
+        inline: "nearest",
+      });
     }
   }, [activeIndex, appearance.smoothAnimations, appearance.activeLinePosition]);
 
@@ -424,7 +423,7 @@ function PrompterView({
           // Skipped -> Special style?
 
           let color = "white"; // Future default
-          let opacity = 1;
+          const opacity = 1;
 
           if (t.skip) {
             color = "#6b7280"; // gray-500
@@ -504,45 +503,39 @@ function Presenter() {
           dispatch({ type: "set-word-index", index: data.index });
           break;
         case "presenter-goto-chapter":
-          try {
-            const cid =
-              typeof data.chapterId === "string" ? data.chapterId : null;
-            dispatch({ type: "set-chapter", chapterId: cid });
+          const cid =
+            typeof data.chapterId === "string" ? data.chapterId : null;
+          dispatch({ type: "set-chapter", chapterId: cid });
 
-            // If the doc is already loaded we can compute the first token index
-            // for the requested chapter and jump immediately.
-            try {
-              const doc = state.payload.doc ?? null;
-              if (cid && doc) {
-                const tok = parseScriptToTokens(
-                  doc,
-                  Boolean(state.payload.appearance?.preserveFormatting),
-                );
-                const first = tok.find(
-                  (t) => t.isWord && t.id.startsWith(`${cid}-`),
-                );
-                if (
-                  first &&
-                  typeof first.index === "number" &&
-                  first.index >= 0
-                ) {
-                  dispatch({ type: "set-word-index", index: first.index });
-                }
-              }
-            } catch (_) {}
+          // If the doc is already loaded we can compute the first token index
+          // for the requested chapter and jump immediately.
 
-            // inform controller that the chapter was applied
-            const w = window.opener || window.parent;
-            if (w)
-              w.postMessage(
-                {
-                  type: "presenter-chapter-loaded",
-                  docId: state.payload.doc?.id ?? null,
-                  chapterId: cid,
-                },
-                window.location.origin,
-              );
-          } catch (_) {}
+          const doc = state.payload.doc ?? null;
+          if (cid && doc) {
+            const tok = parseScriptToTokens(
+              doc,
+              Boolean(state.payload.appearance?.preserveFormatting),
+            );
+            const first = tok.find(
+              (t) => t.isWord && t.id.startsWith(`${cid}-`),
+            );
+            if (first && typeof first.index === "number" && first.index >= 0) {
+              dispatch({ type: "set-word-index", index: first.index });
+            }
+          }
+
+          // inform controller that the chapter was applied
+          const w = window.opener || window.parent;
+          if (w)
+            w.postMessage(
+              {
+                type: "presenter-chapter-loaded",
+                docId: state.payload.doc?.id ?? null,
+                chapterId: cid,
+              },
+              window.location.origin,
+            );
+
           break;
         case "presenter-playing":
           if (data.playing) dispatch({ type: "play" });
@@ -552,9 +545,6 @@ function Presenter() {
           dispatch({ type: "set-mic", active: Boolean(data.active) });
           break;
         case "presenter-voice-commands":
-          try {
-            console.info("[Presenter] voice commands config", data.config);
-          } catch (_) {}
           // reflect in lastCmd for visibility / telemetry
           dispatch({ type: "cmd", cmd: "presenter-voice-commands" });
           break;
@@ -624,12 +614,11 @@ function Presenter() {
     const origin = window.location.origin;
     const id = window.setTimeout(() => {
       dispatch({ type: "ready" });
-      try {
-        (window.opener || window.parent)?.postMessage?.(
-          { type: "presenter-ready" },
-          origin,
-        );
-      } catch {}
+
+      (window.opener || window.parent)?.postMessage?.(
+        { type: "presenter-ready" },
+        origin,
+      );
     }, 50);
     return () => clearTimeout(id);
   }, []);
@@ -637,54 +626,49 @@ function Presenter() {
   // Notify controller when presenter unloads/closes so controller lifecycle remains accurate
   React.useEffect(() => {
     const notifyClosed = () => {
-      try {
-        (window.opener || window.parent)?.postMessage?.(
-          { type: 'presenter-unload' },
-          window.location.origin,
-        );
-      } catch (_) {}
+      (window.opener || window.parent)?.postMessage?.(
+        { type: "presenter-unload" },
+        window.location.origin,
+      );
     };
-    window.addEventListener('beforeunload', notifyClosed);
-    window.addEventListener('unload', notifyClosed);
+    window.addEventListener("beforeunload", notifyClosed);
+    window.addEventListener("unload", notifyClosed);
     return () => {
-      window.removeEventListener('beforeunload', notifyClosed);
-      window.removeEventListener('unload', notifyClosed);
+      window.removeEventListener("beforeunload", notifyClosed);
+      window.removeEventListener("unload", notifyClosed);
     };
   }, []);
 
   // Broadcast state changes back to controller
   React.useEffect(() => {
     if (!state.ready) return;
-    try {
-      const w = window.opener || window.parent;
-      if (w) {
-        w.postMessage(
-          { type: "presenter-playing", playing: state.playing },
-          window.location.origin,
-        );
-        w.postMessage(
-          { type: "presenter-mic", active: state.mic },
-          window.location.origin,
-        );
-        // Notify controller of wordIndex changes so the App can sync its UI/hook
-        w.postMessage(
-          { type: "presenter-word-index", index: state.wordIndex },
-          window.location.origin,
-        );
-      }
-    } catch (_) {}
+
+    const w = window.opener || window.parent;
+    if (w) {
+      w.postMessage(
+        { type: "presenter-playing", playing: state.playing },
+        window.location.origin,
+      );
+      w.postMessage(
+        { type: "presenter-mic", active: state.mic },
+        window.location.origin,
+      );
+      // Notify controller of wordIndex changes so the App can sync its UI/hook
+      w.postMessage(
+        { type: "presenter-word-index", index: state.wordIndex },
+        window.location.origin,
+      );
+    }
   }, [state.playing, state.mic, state.wordIndex, state.ready]);
 
   React.useEffect(() => {
     if (!state.ready) return;
-    try {
-      window.focus?.();
-    } catch (_) {}
+
+    window.focus?.();
+
     const onKey = (ev: KeyboardEvent) => {
       if (ev.key === "Enter")
-        try {
-          document.documentElement.requestFullscreen?.().catch(() => {});
-        } catch (_) {}
+        document.documentElement.requestFullscreen?.().catch(() => {});
     };
     window.addEventListener("keydown", onKey, {
       once: true,
@@ -705,22 +689,20 @@ function Presenter() {
   // presenter scrolls to the first word of that chapter by setting
   // the global wordIndex accordingly.
   React.useEffect(() => {
-    try {
-      const cid = state.currentChapterId;
-      const doc = state.payload.doc ?? null;
-      if (!cid || !doc) return;
-      const tok = parseScriptToTokens(
-        doc,
-        appearance.preserveFormatting || false,
-      );
-      const first = tok.find((t) => t.isWord && t.id.startsWith(`${cid}-`));
-      if (first && typeof first.index === "number" && first.index >= 0) {
-        // only update when different to avoid unnecessary re-renders
-        if (first.index !== state.wordIndex) {
-          dispatch({ type: "set-word-index", index: first.index });
-        }
+    const cid = state.currentChapterId;
+    const doc = state.payload.doc ?? null;
+    if (!cid || !doc) return;
+    const tok = parseScriptToTokens(
+      doc,
+      appearance.preserveFormatting || false,
+    );
+    const first = tok.find((t) => t.isWord && t.id.startsWith(`${cid}-`));
+    if (first && typeof first.index === "number" && first.index >= 0) {
+      // only update when different to avoid unnecessary re-renders
+      if (first.index !== state.wordIndex) {
+        dispatch({ type: "set-word-index", index: first.index });
       }
-    } catch (_) {}
+    }
   }, [
     state.currentChapterId,
     state.payload.doc,
@@ -743,33 +725,25 @@ function Presenter() {
     let pc: RTCPeerConnection | null = null;
 
     function cleanup() {
-      try {
-        ws?.close();
-      } catch (_) {}
-      try {
-        pc?.close();
-      } catch (_) {}
+      ws?.close();
+
+      pc?.close();
+
       ws = null;
       pc = null;
     }
 
     (async () => {
-      try {
-        ws = new WebSocket(
-          (location.protocol === "https:" ? "wss:" : "ws:") +
-            "//" +
-            location.host +
-            "/ws",
-        );
-      } catch (err) {
-        console.warn("[webrtc] ws open failed", err);
-        return;
-      }
+      ws = new WebSocket(
+        (location.protocol === "https:" ? "wss:" : "ws:") +
+          "//" +
+          location.host +
+          "/ws",
+      );
 
       ws.addEventListener("open", () => {
-        try {
-          ws?.send(JSON.stringify({ type: "join", room }));
-        } catch (_) {}
+        ws?.send(JSON.stringify({ type: "join", room }));
+
         console.log("[webrtc] joined room", room);
       });
 
@@ -783,55 +757,52 @@ function Presenter() {
 
         // Offer from controller -> create pc, setRemote, createAnswer
         if (msg?.type === "offer" && typeof msg.sdp === "string") {
-          try {
-            if (!pc) {
-              pc = new RTCPeerConnection({
-                iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-              });
+          if (!pc) {
+            pc = new RTCPeerConnection({
+              iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+            });
 
-              pc.addEventListener("icecandidate", (e) => {
-                if (!e.candidate) return;
-                try {
-                  ws?.send(
-                    JSON.stringify({ type: "ice", candidate: e.candidate }),
-                  );
-                } catch (_) {}
-              });
+            pc.addEventListener("icecandidate", (e) => {
+              if (!e.candidate) return;
 
-              pc.addEventListener("track", (t) => {
-                const [s] = t.streams || [];
-                console.log('[webrtc] incoming remote track (presenter) — streams:', (t.streams || []).length, 'track:', t.track?.kind);
-                // no on-page preview in presenter; presenter doesn't render incoming video element
-              });
+              ws?.send(JSON.stringify({ type: "ice", candidate: e.candidate }));
+            });
 
-              pc.addEventListener("datachannel", (ev2) => {
-                const ch = ev2.channel;
-                ch.onopen = () => console.log("[webrtc] datachannel open");
-                ch.onmessage = (m) => console.log("[webrtc] dc rx", m.data);
-              });
-            }
+            pc.addEventListener("track", (t) => {
+              const [s] = t.streams || [];
+              console.log(
+                "[webrtc] incoming remote track (presenter) — streams:",
+                (t.streams || []).length,
+                "track:",
+                t.track?.kind,
+              );
+              // no on-page preview in presenter; presenter doesn't render incoming video element
+            });
 
-            const offer = {
-              type: "offer",
-              sdp: msg.sdp,
-            } as RTCSessionDescriptionInit;
-            await pc.setRemoteDescription(offer);
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            try {
-              ws?.send(JSON.stringify({ type: "answer", sdp: answer.sdp }));
-            } catch (_) {}
-          } catch (err) {
-            console.warn("[webrtc] handle offer failed", err);
+            pc.addEventListener("datachannel", (ev2) => {
+              const ch = ev2.channel;
+              ch.onopen = () => console.log("[webrtc] datachannel open");
+              ch.onmessage = (m) => console.log("[webrtc] dc rx", m.data);
+            });
           }
+
+          const offer = {
+            type: "offer",
+            sdp: msg.sdp,
+          } as RTCSessionDescriptionInit;
+          await pc.setRemoteDescription(offer);
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+
+          ws?.send(JSON.stringify({ type: "answer", sdp: answer.sdp }));
+
           return;
         }
 
         // remote ICE candidate from controller
         if (msg?.type === "ice" && msg.candidate) {
-          try {
-            pc?.addIceCandidate(msg.candidate).catch(() => {});
-          } catch (_) {}
+          pc?.addIceCandidate(msg.candidate).catch(() => {});
+
           return;
         }
       });
@@ -841,12 +812,9 @@ function Presenter() {
     })();
 
     return () => {
-      try {
-        ws?.close();
-      } catch (_) {}
-      try {
-        pc?.close();
-      } catch (_) {}
+      ws?.close();
+
+      pc?.close();
     };
   }, []);
   React.useEffect(() => {
@@ -854,36 +822,36 @@ function Presenter() {
 
     async function applyCamera(deviceId?: string | null) {
       // always stop any existing stream first
-      try {
-        streamRef.current?.getTracks().forEach((t) => t.stop());
-      } catch (_) {}
+
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+
       streamRef.current = null;
 
       // If overlay is hidden or not the 'camera' shape we do not open the camera (presenter shows only dummy visuals)
       if (!appearance.showOverlay || appearance.overlayShape !== "camera") {
         setCameraError(null);
-        try {
-          const w = window.opener || window.parent;
-          if (w)
-            w.postMessage(
-              { type: "presenter-camera", active: false },
-              window.location.origin,
-            );
-        } catch (_) {}
+
+        const w = window.opener || window.parent;
+        if (w)
+          w.postMessage(
+            { type: "presenter-camera", active: false },
+            window.location.origin,
+          );
+
         return;
       }
 
       // no device selected -> nothing to do
       if (!deviceId) {
         setCameraError(null);
-        try {
-          const w = window.opener || window.parent;
-          if (w)
-            w.postMessage(
-              { type: "presenter-camera", active: false },
-              window.location.origin,
-            );
-        } catch (_) {}
+
+        const w = window.opener || window.parent;
+        if (w)
+          w.postMessage(
+            { type: "presenter-camera", active: false },
+            window.location.origin,
+          );
+
         return;
       }
 
@@ -898,57 +866,46 @@ function Presenter() {
         streamRef.current = stream;
         // attach to the large-background video (if present)
         if (videoRef.current) {
-          try {
-            videoRef.current.srcObject = stream;
-            await videoRef.current.play();
-          } catch (_) {
-            /* ignore */
-          }
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
         }
         // also attach to the overlay badge video (if present) so the small
         // movable badge shows the live feed when overlayShape === 'camera'
         if (overlayVideoRef.current) {
-          try {
-            overlayVideoRef.current.srcObject = stream;
-            await overlayVideoRef.current.play();
-          } catch (_) {
-            /* ignore */
-          }
+          overlayVideoRef.current.srcObject = stream;
+          await overlayVideoRef.current.play();
         }
 
         setCameraError(null);
-        try {
-          const w = window.opener || window.parent;
-          if (w)
-            w.postMessage(
-              { type: "presenter-camera", active: true },
-              window.location.origin,
-            );
-        } catch (_) {}
+
+        const w = window.opener || window.parent;
+        if (w)
+          w.postMessage(
+            { type: "presenter-camera", active: true },
+            window.location.origin,
+          );
       } catch (err: any) {
         const msg = String(err?.message ?? err ?? "Camera error");
         setCameraError(msg);
-        try {
-          const w = window.opener || window.parent;
-          if (w)
-            w.postMessage(
-              { type: "presenter-camera", active: false, error: msg },
-              window.location.origin,
-            );
-        } catch (_) {}
+
+        const w = window.opener || window.parent;
+        if (w)
+          w.postMessage(
+            { type: "presenter-camera", active: false, error: msg },
+            window.location.origin,
+          );
       }
     }
 
     applyCamera(appearance.videoDeviceId ?? null);
     return () => {
       mounted = false;
-      try {
-        streamRef.current?.getTracks().forEach((t) => t.stop());
-      } catch (_) {}
+
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+
       streamRef.current = null;
-      try {
-        if (overlayVideoRef.current) overlayVideoRef.current.srcObject = null;
-      } catch (_) {}
+
+      if (overlayVideoRef.current) overlayVideoRef.current.srcObject = null;
     };
   }, [
     appearance.videoDeviceId,
@@ -1012,7 +969,18 @@ function Presenter() {
   return (
     <div style={rootStyle} className={appearance.mirrorMode ? "mirror" : ""}>
       {/* hidden focus anchor used by focus-keepalive (tabIndex allows programmatic focus) */}
-      <div id="presenter-focus-anchor" tabIndex={-1} aria-hidden style={{position: 'fixed', left: '-9999px', width: 1, height: 1, overflow: 'hidden'}} />
+      <div
+        id="presenter-focus-anchor"
+        tabIndex={-1}
+        aria-hidden
+        style={{
+          position: "fixed",
+          left: "-9999px",
+          width: 1,
+          height: 1,
+          overflow: "hidden",
+        }}
+      />
       {/* Centerline (subtle + prominent) — visibility and height controlled by appearance */}
       {appearance.showCenterline !== false && (
         <>
@@ -1128,34 +1096,36 @@ function Presenter() {
 
       {/* incoming WebRTC stream (controller -> presenter) */}
 
-
       <button
         onClick={async () => {
           try {
             const roomId = Math.random().toString(36).slice(2, 9);
-            
+
             // Step 1: Create WebSocket and wait for connection
-            const ws = new WebSocket((location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws');
-            await new Promise((res) => { 
-              ws.addEventListener('open', () => res(null)); 
-              setTimeout(() => res(null), 500); 
+            const ws = new WebSocket(
+              (location.protocol === "https:" ? "wss:" : "ws:") +
+                "//" +
+                location.host +
+                "/ws",
+            );
+            await new Promise((res) => {
+              ws.addEventListener("open", () => res(null));
+              setTimeout(() => res(null), 500);
             });
-            console.log('[presenter] WebSocket connected');
+            console.log("[presenter] WebSocket connected");
 
             // Step 2: Join room FIRST (before inviting phone)
-            try { 
-              ws.send(JSON.stringify({ type: 'join', room: roomId })); 
-              console.log('[presenter] Joined room:', roomId);
-            } catch (_) {}
+
+            ws.send(JSON.stringify({ type: "join", room: roomId }));
+            console.log("[presenter] Joined room:", roomId);
 
             // Step 3: NOW send invite to phone (presenter is already waiting in room)
-            try {
-              (window.opener || window.parent)?.postMessage(
-                { type: 'presenter-share-invite', room: roomId },
-                window.location.origin,
-              );
-              console.log('[presenter] Sent invite to phone');
-            } catch (_) {}
+
+            (window.opener || window.parent)?.postMessage(
+              { type: "presenter-share-invite", room: roomId },
+              window.location.origin,
+            );
+            console.log("[presenter] Sent invite to phone");
 
             // Step 4: Wait for phone to join (peer-joined message) — fallback after 1.5s
             await new Promise<void>((resolve) => {
@@ -1163,157 +1133,209 @@ function Presenter() {
               const timer = window.setTimeout(() => {
                 if (!finished) {
                   finished = true;
-                  console.log('[presenter] Timeout waiting for peer, proceeding anyway');
+                  console.log(
+                    "[presenter] Timeout waiting for peer, proceeding anyway",
+                  );
                   resolve();
                 }
               }, 1500);
 
               const onMessage = (ev: MessageEvent) => {
-                try {
-                  const m = JSON.parse(ev.data);
-                  if (m?.type === 'peer-joined') {
-                    if (!finished) {
-                      finished = true;
-                      window.clearTimeout(timer);
-                      console.log('[presenter] Phone joined!');
-                      resolve();
-                    }
+                const m = JSON.parse(ev.data);
+                if (m?.type === "peer-joined") {
+                  if (!finished) {
+                    finished = true;
+                    window.clearTimeout(timer);
+                    console.log("[presenter] Phone joined!");
+                    resolve();
                   }
-                } catch (_) {}
+                }
               };
 
-              ws.addEventListener('message', onMessage, { once: false } as any);
+              ws.addEventListener("message", onMessage, { once: false } as any);
             });
 
             // Step 5: Get display stream
-            const displayStream = await (navigator.mediaDevices as any).getDisplayMedia({ video: true });
-            console.log('[presenter] Got display stream');
+            const displayStream = await (
+              navigator.mediaDevices as any
+            ).getDisplayMedia({ video: true });
+            console.log("[presenter] Got display stream");
 
-            const pc = new RTCPeerConnection({ 
+            const pc = new RTCPeerConnection({
               iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-                { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-                { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
-              ] 
+                { urls: "stun:stun.l.google.com:19302" },
+                {
+                  urls: "turn:openrelay.metered.ca:80",
+                  username: "openrelayproject",
+                  credential: "openrelayproject",
+                },
+                {
+                  urls: "turn:openrelay.metered.ca:443",
+                  username: "openrelayproject",
+                  credential: "openrelayproject",
+                },
+                {
+                  urls: "turn:openrelay.metered.ca:443?transport=tcp",
+                  username: "openrelayproject",
+                  credential: "openrelayproject",
+                },
+              ],
             });
 
-            let pendingIceCandidates: RTCIceCandidate[] = [];
+            const pendingIceCandidates: RTCIceCandidate[] = [];
             let _focusKeepalive: number | null = null;
 
             function startFocusKeepAlive() {
-              try {
-                if (_focusKeepalive) return;
-                _focusKeepalive = window.setInterval(() => {
-                  try {
-                    // Prefer focusing a hidden focusable anchor (more reliable than window.focus)
-                    const anchor = document.getElementById('presenter-focus-anchor') as HTMLElement | null;
-                    window.focus?.();
-                    if (anchor) {
-                      try { anchor.focus({ preventScroll: true } as any); } catch (_) {}
-                    }
-                    // Fallback to window.focus
-                    if (!document.hasFocus()) try { window.focus(); } catch (_) {}
-                  } catch (_) {}
-                }, 1000);
+              if (_focusKeepalive) return;
+              _focusKeepalive = window.setInterval(() => {
+                // Prefer focusing a hidden focusable anchor (more reliable than window.focus)
+                const anchor = document.getElementById(
+                  "presenter-focus-anchor",
+                ) as HTMLElement | null;
+                window.focus?.();
+                if (anchor) {
+                  anchor.focus({ preventScroll: true } as any);
+                }
+                // Fallback to window.focus
+                if (!document.hasFocus()) window.focus();
+              }, 1000);
 
-                document.addEventListener('visibilitychange', onVisibilityChange);
-                console.log('[presenter] focus-keepalive started');
-              } catch (_) {}
+              document.addEventListener("visibilitychange", onVisibilityChange);
+              console.log("[presenter] focus-keepalive started");
             }
 
             function stopFocusKeepAlive() {
-              try {
-                if (_focusKeepalive) {
-                  clearInterval(_focusKeepalive);
-                  _focusKeepalive = null;
-                }
-                document.removeEventListener('visibilitychange', onVisibilityChange);
-                console.log('[presenter] focus-keepalive stopped');
-              } catch (_) {}
+              if (_focusKeepalive) {
+                clearInterval(_focusKeepalive);
+                _focusKeepalive = null;
+              }
+              document.removeEventListener(
+                "visibilitychange",
+                onVisibilityChange,
+              );
+              console.log("[presenter] focus-keepalive stopped");
             }
 
             function onVisibilityChange() {
-              try {
-                if (document.hidden) window.focus();
-              } catch (_) {}
+              if (document.hidden) window.focus();
             }
 
-            pc.addEventListener('icecandidate', (e) => {
+            pc.addEventListener("icecandidate", (e) => {
               if (!e.candidate) return;
-              try { 
-                ws.send(JSON.stringify({ type: 'ice', candidate: e.candidate, room: roomId })); 
-                console.log('[presenter] sent ICE candidate');
-              } catch (_) {}
+
+              ws.send(
+                JSON.stringify({
+                  type: "ice",
+                  candidate: e.candidate,
+                  room: roomId,
+                }),
+              );
+              console.log("[presenter] sent ICE candidate");
             });
 
-            pc.addEventListener('connectionstatechange', () => {
-              console.log('[presenter] PC state:', pc.connectionState);
-              if (pc.connectionState === 'disconnected' || pc.connectionState === 'closed' || pc.connectionState === 'failed') {
+            pc.addEventListener("connectionstatechange", () => {
+              console.log("[presenter] PC state:", pc.connectionState);
+              if (
+                pc.connectionState === "disconnected" ||
+                pc.connectionState === "closed" ||
+                pc.connectionState === "failed"
+              ) {
                 stopFocusKeepAlive();
               }
             });
 
             for (const t of displayStream.getTracks()) {
               pc.addTrack(t, displayStream);
-              console.log('[presenter] added track:', t.kind, t.id);
+              console.log("[presenter] added track:", t.kind, t.id);
             }
 
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
-            console.log('[presenter] created offer, sending...');
-            try { ws.send(JSON.stringify({ type: 'offer', sdp: offer.sdp, room: roomId })); } catch (_) {}
+            console.log("[presenter] created offer, sending...");
+
+            ws.send(
+              JSON.stringify({ type: "offer", sdp: offer.sdp, room: roomId }),
+            );
 
             // start keeping the presenter focused while we are streaming
             startFocusKeepAlive();
 
             const onWsMessage = (ev: MessageEvent) => {
-              try {
-                const msg = JSON.parse(ev.data);
+              const msg = JSON.parse(ev.data);
 
-                if (msg?.type === 'answer' && msg.sdp) {
-                  console.log('[presenter] received answer');
-                  pc.setRemoteDescription({ type: 'answer', sdp: msg.sdp } as RTCSessionDescriptionInit)
-                    .then(() => {
-                      console.log('[presenter] setRemoteDescription OK, draining ICE candidates');
-                      while (pendingIceCandidates.length) {
-                        const c = pendingIceCandidates.shift();
-                        if (c) pc.addIceCandidate(c).catch(() => {});
-                      }
-                    })
-                    .catch((e) => console.warn('[presenter] setRemoteDescription failed:', e));
-                  return;
-                }
+              if (msg?.type === "answer" && msg.sdp) {
+                console.log("[presenter] received answer");
+                pc.setRemoteDescription({
+                  type: "answer",
+                  sdp: msg.sdp,
+                } as RTCSessionDescriptionInit)
+                  .then(() => {
+                    console.log(
+                      "[presenter] setRemoteDescription OK, draining ICE candidates",
+                    );
+                    while (pendingIceCandidates.length) {
+                      const c = pendingIceCandidates.shift();
+                      if (c) pc.addIceCandidate(c).catch(() => {});
+                    }
+                  })
+                  .catch((e) =>
+                    console.warn("[presenter] setRemoteDescription failed:", e),
+                  );
+                return;
+              }
 
-                if (msg?.type === 'ice' && msg.candidate) {
-                  // Queue if no remoteDescription yet
-                  if (!pc.remoteDescription || !pc.remoteDescription.type) {
-                    pendingIceCandidates.push(msg.candidate);
-                    console.log('[presenter] queued ICE candidate (count:', pendingIceCandidates.length, ')');
-                  } else {
-                    pc.addIceCandidate(msg.candidate).catch(() => {});
-                    console.log('[presenter] added remote ICE candidate');
-                  }
-                  return;
+              if (msg?.type === "ice" && msg.candidate) {
+                // Queue if no remoteDescription yet
+                if (!pc.remoteDescription || !pc.remoteDescription.type) {
+                  pendingIceCandidates.push(msg.candidate);
+                  console.log(
+                    "[presenter] queued ICE candidate (count:",
+                    pendingIceCandidates.length,
+                    ")",
+                  );
+                } else {
+                  pc.addIceCandidate(msg.candidate).catch(() => {});
+                  console.log("[presenter] added remote ICE candidate");
                 }
-              } catch (_) {}
+                return;
+              }
             };
 
-            ws.addEventListener('message', onWsMessage);
+            ws.addEventListener("message", onWsMessage);
 
             const cleanup = () => {
-              try { ws.removeEventListener('message', onWsMessage); } catch (_) {}
-              try { pc.close(); } catch (_) {}
-              try { displayStream.getTracks().forEach((t: MediaStreamTrack) => t.stop()); } catch (_) {}
-              try { stopFocusKeepAlive(); } catch (_) {}
+              ws.removeEventListener("message", onWsMessage);
+
+              pc.close();
+
+              displayStream
+                .getTracks()
+                .forEach((t: MediaStreamTrack) => t.stop());
+
+              stopFocusKeepAlive();
             };
-            window.addEventListener('beforeunload', cleanup, { once: true });
+            window.addEventListener("beforeunload", cleanup, { once: true });
           } catch (err) {
-            console.warn('Screen-share to paired phone failed', err);
-            alert('Failed to start screen-share');
+            console.warn("Screen-share to paired phone failed", err);
+            alert("Failed to start screen-share");
           }
         }}
-        style={{ position: "fixed", right: 12, top: 12, zIndex: 40, backgroundColor: "black", appearance: "none", border: "none", padding: 8, borderRadius: 4, color: "white", fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}
+        style={{
+          position: "fixed",
+          right: 12,
+          top: 12,
+          zIndex: 40,
+          backgroundColor: "black",
+          appearance: "none",
+          border: "none",
+          padding: 8,
+          borderRadius: 4,
+          color: "white",
+          fontSize: 12,
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+        }}
         title="Stream this presenter to paired phone"
       >
         <Icon name="screencast" width={18} title="Casting" />
