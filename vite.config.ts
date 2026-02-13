@@ -207,7 +207,7 @@ export default defineConfig({
     // accept external hosts (CodeSandbox, ngrok, etc.) and prefer PORT from env
     host: true,
     port: Number(process.env.PORT) || 5173,
-    allowedHosts: ["localhost", "0.0.0.0", process.env.CODESANDBOX_HOST],
+    allowedHosts: true,
     // when the standalone mock WS server is started on a separate port, proxy `/ws` to it
     proxy: process.env.MOCK_WS_PORT
       ? {
