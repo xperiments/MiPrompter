@@ -22,6 +22,15 @@ type StagePlacedSource = {
   label: string;
 };
 
+type PairedDevice = {
+  id: string;
+  label?: string;
+  ua?: string;
+  screen?: { width?: number; height?: number };
+  createdAt?: number;
+  lastSeen?: number;
+};
+
 // Hook: fit a target rect into a container (returns rendered size + scale)
 function useFitRect(
   containerRef: React.RefObject<HTMLElement>,
@@ -70,6 +79,46 @@ export default function Composer() {
   // selectedDisplayId is the ScreenInfo.id for the selected screen in this view
   const [selectedDisplayId, setSelectedDisplayId] = useState<string | null>(null);
   const [lastSelectedDisplay, setLastSelectedDisplay] = useState<string | null>(null);
+
+  // paired / remote devices (received from PairedDeviceList)
+  const [pairedDevices, setPairedDevices] = useState<PairedDevice[]>([]);
+
+  useEffect(() => {
+    const handler = (ev: Event) => {
+      const detail = (ev as CustomEvent)?.detail as PairedDevice[] | undefined;
+      console.debug("Composer: smui.paired-devices event", Array.isArray(detail) ? detail.map((d) => d.id) : detail);
+      setPairedDevices(Array.isArray(detail) ? detail : []);
+    };
+
+    window.addEventListener("smui.paired-devices", handler as EventListener);
+
+    // ask for current paired devices immediately (covers the case where the
+    // pair list was populated before Composer mounted). Also accept a global
+    // fallback if present. Retry once to cover effect ordering race.
+    const requestPaired = () => {
+      try {
+        console.debug("Composer: requesting paired devices (smui.request-paired-devices)");
+        window.dispatchEvent(new CustomEvent("smui.request-paired-devices"));
+        const existing = (window as any).__smui_pairedDevices;
+        if (Array.isArray(existing)) {
+          console.debug("Composer: found fallback paired devices", existing.map((d: PairedDevice) => d.id));
+          setPairedDevices(existing);
+        }
+      } catch (_) {
+        /* ignore */
+      }
+    };
+
+    requestPaired();
+    const retry1 = window.setTimeout(requestPaired, 250);
+    const retry2 = window.setTimeout(requestPaired, 1000);
+
+    return () => {
+      window.removeEventListener("smui.paired-devices", handler as EventListener);
+      clearTimeout(retry1);
+      clearTimeout(retry2);
+    };
+  }, []);
 
   // stageSources: placed sources on the stage (prevent duplicates by default)
   const [stageSources, setStageSources] = useState<StagePlacedSource[]>([]);
@@ -134,6 +183,13 @@ export default function Composer() {
       /* non-fatal — preserve existing behaviour */
       console.debug("Composer: handleSelectDisplay failed", err);
     }
+  }
+
+  function handleSelectRemote(p: PairedDevice) {
+    // mark remote as selected in the UI and request PairedDeviceList to open it
+    setSelectedDisplayId(`remote:${p.id}`);
+    // window.dispatchEvent(new CustomEvent("smui.open-remote-device", { detail: p.id }));
+    // setLastSelectedDisplay(p.label ?? `Remote ${p.id}`);
   }
 
   // Build the list of video sources shown in the filmstrip (cameras only)
@@ -222,7 +278,22 @@ export default function Composer() {
 
   // Stage sizing (fit selected display aspect ratio)
   const centerContainerRef = useRef<HTMLDivElement | null>(null);
-  const selectedScreen = screens.screens.find((s) => s.id === selectedDisplayId) ?? screens.screens[0];
+  const selectedScreen =
+    screens.screens.find((s) => s.id === selectedDisplayId) ??
+    (selectedDisplayId ? (() => {
+      const rp = pairedDevices.find((p) => `remote:${p.id}` === selectedDisplayId);
+      if (rp) {
+        return {
+          id: `remote:${rp.id}`,
+          left: 0,
+          top: 0,
+          width: rp.screen?.width ?? 1280,
+          height: rp.screen?.height ?? 720,
+          label: rp.label ?? `Remote ${rp.id}`,
+        } as ScreenInfo;
+      }
+      return null;
+    })() : null) ?? screens.screens[0];
   const targetW = selectedScreen?.width ?? 1280;
   const targetH = selectedScreen?.height ?? 720;
   const { renderedWidth, renderedHeight, scale } = useFitRect(centerContainerRef, targetW, targetH);
@@ -233,6 +304,7 @@ export default function Composer() {
         {/* Left: Displays Picker */}
         <div className="w-64">
           <h3 className="text-sm text-white/60 mb-3">Displays</h3>
+          <div className="text-xs text-white/50 mb-2">Paired devices: {pairedDevices.length}{pairedDevices.length ? ` — ${pairedDevices.map((p) => p.id).join(", ")}` : ""}</div>
           <div className="space-y-3">
             {(screens.screens || []).map((s) => (
               <DisplayMini
@@ -242,6 +314,24 @@ export default function Composer() {
                 onSelect={() => handleSelectDisplay(s)}
               />
             ))}
+
+            {pairedDevices.length > 0 ? (
+              <>
+                <div className="h-px bg-white/8 my-2" />
+                {pairedDevices.map((p) => {
+                  const id = `remote:${p.id}`;
+                  const screenInfo = { id, left: 0, top: 0, width: p.screen?.width ?? 1280, height: p.screen?.height ?? 720, label: p.label ?? `Remote ${p.id}` } as ScreenInfo;
+                  return (
+                    <DisplayMini
+                      key={id}
+                      screen={screenInfo}
+                      selected={selectedDisplayId === id}
+                      onSelect={() => handleSelectRemote(p)}
+                    />
+                  );
+                })}
+              </>
+            ) : null}
           </div>
         </div>
 
@@ -374,13 +464,13 @@ function DisplayMini({
   return (
     <button
       onClick={onSelect}
-      className={`w-full flex items-center gap-3 p-2 rounded-md border border-white/6 bg-white/3 hover:bg-white/4 text-left ${
-        selected ? "ring-2 ring-blue-500/60 bg-white/4" : ""
+      className={`w-full flex items-center gap-3 p-2 white/6 bg-white/3 hover:bg-white/4 text-left ${
+        selected ? "bg-black/10" : ""
       }`}
       title={screen.label}
     >
       <div style={{ width: 120 }} className="flex items-center gap-3">
-        <div className="flex-shrink-0 bg-black/30 rounded-md" style={{ width: w, height: h }} />
+        <div className="flex-shrink-0 border border-white/20 rounded-md" style={{ width: w, height: h }} />
         <div className="flex-1">
           <div className="text-sm text-white/90 truncate">{screen.label}</div>
           <div className="text-xs text-white/50">{Math.round(screen.width)}×{Math.round(screen.height)}</div>

@@ -6,6 +6,7 @@ import React, {
   useState,
 } from "react";
 import QRCode from "qrcode";
+
 import type { ScriptDoc, AppearanceSettings } from "../types";
 import { SidebarSection } from "./sidebar/SidebarSection";
 import { Select } from "./ui/Select";
@@ -22,7 +23,6 @@ import {
   usePresenterSync,
   updatePresenterWindow,
 } from "../hooks/usePresenterSync";
-import { setPresenterWsSender } from "../lib/presenter-transport";
 
 /* extracted sidebar subcomponents */
 import ScriptsSection from "./sidebar/ScriptsSection";
@@ -175,6 +175,18 @@ export function Sidebar(props: SidebarProps) {
   const [presenterPreview, setPresenterPreview] = React.useState<Partial<
     typeof presenter
   > | null>(null);
+
+  // Visual-only Cast QR (Sidebar) — points to app.html (WS transport) with a random token
+  const [castQrUrl] = React.useState(
+    () =>
+      `${location.origin}/app.html?transport=ws&rnd=${Math.floor(Math.random() * 1e9)}`,
+  );
+  const [castQrDataUrl, setCastQrDataUrl] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    QRCode.toDataURL(castQrUrl, { margin: 1, width: 220 })
+      .then(setCastQrDataUrl)
+      .catch(() => setCastQrDataUrl(null));
+  }, [castQrUrl]);
 
   // If the authoritative presenter props change (external update), clear preview
   React.useEffect(() => {
@@ -519,32 +531,6 @@ export function Sidebar(props: SidebarProps) {
         onImport={handleImportScripts}
       />
 
-      {/* Display Section (extracted) */}
-      {/* <DisplaysSection
-        screens={screens}
-        activeScreenLabel={screens?.selectedScreenLabel}
-        onSelectScreen={handleSelectScreen}
-        onRefresh={screens?.refresh}
-        presenterStatus={presenterStatus}
-      /> */}
-
-      {/* Video Source / Pairing (new) */}
-      <SidebarSection title="Cast" icon="movie">
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <div className="flex-1">
-            {/* Paired devices + 'None' option */}
-            <PairedDeviceList
-              presenterWindowRef={props.presenterWindowRef}
-              onOpenTeleprompter={props.onOpenTeleprompter}
-              screens={screens}
-              on={props.on}
-              scripts={props.scripts}
-              activeScriptId={props.activeScriptId}
-              appearance={presenter}
-            />
-          </div>
-        </div>
-      </SidebarSection>
 
       {/* Appearance + Display Options (extracted) */}
       <AppearanceSection
@@ -916,605 +902,51 @@ export function Sidebar(props: SidebarProps) {
         </div>
       </SidebarSection>
 
-      <div className="h-10" />
-    </div>
-  );
-}
 
-// Paired devices / QR pairing component
-function PairedDeviceList({
-  presenterWindowRef,
-  onOpenTeleprompter,
-  screens,
-  on,
-  scripts,
-  activeScriptId,
-  appearance,
-}: {
-  presenterWindowRef?: React.MutableRefObject<Window | null>;
-  onOpenTeleprompter?: () => void;
-  screens?: ReturnType<typeof useScreenDetection>;
-  on?: (
-    type: string,
-    handler: (
-      payload: unknown,
-      meta?: { origin: string; transport: "postMessage" | "ws" },
-    ) => void,
-  ) => () => void;
-  scripts?: ScriptDoc[];
-  activeScriptId?: string;
-  appearance?: Record<string, any>;
-}) {
-  type Paired = {
-    id: string;
-    label?: string;
-    ua?: string;
-    screen?: { width?: number; height?: number };
-    createdAt?: number;
-    lastSeen?: number;
-  };
-  const [paired, setPaired] = useState<Paired[]>(() => []);
-  const [showQr, setShowQr] = useState(false);
-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
 
-  // Keep refs to latest scripts/activeScriptId so message handlers always use current values
-  const scriptsRef = useRef(scripts);
-  const activeScriptIdRef = useRef(activeScriptId);
-  const appearanceRef = useRef(appearance);
-
-  useEffect(() => {
-    scriptsRef.current = scripts;
-  }, [scripts]);
-
-  useEffect(() => {
-    activeScriptIdRef.current = activeScriptId;
-  }, [activeScriptId]);
-
-  useEffect(() => {
-    appearanceRef.current = appearance;
-  }, [appearance]);
-
-  // When activeScriptId changes, broadcast the updated doc + appearance to WS presenters
-  useEffect(() => {
-    console.log("[Sidebar] activeScriptId effect triggered, activeScriptId:", activeScriptId);
-    
-    const ws = wsRef.current;
-    console.log("[Sidebar] WebSocket state:", ws?.readyState, "(1=OPEN, 3=CLOSED)");
-    
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      console.log("[Sidebar] WebSocket not open, skipping broadcast");
-      return;
-    }
-
-    const DEFAULT_WS_ROOM = "smui-default";
-    const activeDoc = scriptsRef.current?.find((s) => s.id === activeScriptIdRef.current) ?? null;
-
-    console.log("[Sidebar] Broadcasting chapter change - activeDoc:", activeDoc?.title ?? "unknown", "docId:", activeScriptIdRef.current);
-
-    try {
-      ws.send(JSON.stringify({ type: "signal", room: DEFAULT_WS_ROOM, data: { type: "presenter-load-doc", doc: activeDoc } }));
-      ws.send(JSON.stringify({ type: "signal", room: DEFAULT_WS_ROOM, data: { type: "set-params", docId: activeScriptIdRef.current ?? null, appearance: appearanceRef.current } }));
-      
-      // Navigate to first chapter of the new doc
-      const firstChapterId = activeDoc?.chapters?.[0]?.id ?? null;
-      if (firstChapterId) {
-        console.log("[Sidebar] Navigating to first chapter:", firstChapterId);
-        ws.send(JSON.stringify({ type: "signal", room: DEFAULT_WS_ROOM, data: { type: "presenter-goto-chapter", chapterId: firstChapterId } }));
-      }
-      
-      console.log("[Sidebar] ✓ Broadcast chapter change to WS room");
-    } catch (err) {
-      console.error("[Sidebar] Error broadcasting chapter change:", err);
-    }
-  }, [activeScriptId]);
-
-  const save = (next: Paired[]) => {
-    // keep only the first entry in-memory (do NOT persist to localStorage)
-    const normalized = next && next.length ? [next[0]] : [];
-    setPaired(normalized);
-  };
-
-  useEffect(() => {
-    const DEFAULT_WS_ROOM = "smui-default";
-
-    const proto = location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${proto}//${location.host}/ws`;
-    let ws: WebSocket | null = null;
-    try {
-      ws = new WebSocket(wsUrl);
-      console.log("[Sidebar] Creating WebSocket:", wsUrl);
-    } catch (err) {
-      console.error("[Sidebar] WebSocket creation failed:", err);
-      ws = null;
-    }
-    wsRef.current = ws;
-
-    if (!ws) return;
-
-    ws.addEventListener("open", () => {
-      console.log("[Sidebar] WebSocket opened, state:", ws.readyState);
-
-      // join a default dev room so presenters opened manually with ?transport=ws
-      // can communicate without an explicit room id.
-      try {
-        ws.send(JSON.stringify({ type: "join", room: DEFAULT_WS_ROOM }));
-        console.log("[Sidebar] joined default WS room:", DEFAULT_WS_ROOM);
-      } catch (err) {
-        /* ignore */
-      }
-
-      // register a default WS sender bound to the default room so
-      // usePresenterBridge.send() works when the controller hasn't created
-      // a dedicated per-pair room.
-      try {
-        setPresenterWsSender((msg) => {
-          try {
-            const s = wsRef.current;
-            if (!s || s.readyState !== WebSocket.OPEN) return false;
-            s.send(JSON.stringify({ type: "signal", room: DEFAULT_WS_ROOM, data: msg }));
-            return true;
-          } catch (err) {
-            return false;
-          }
-        });
-
-        // Initial seed: send current doc + appearance on first open
-        console.log("[Sidebar] Sending initial doc + appearance on ws.open");
-        const activeDoc = scriptsRef.current?.find((s) => s.id === activeScriptIdRef.current) ?? null;
-        ws.send(JSON.stringify({ type: "signal", room: DEFAULT_WS_ROOM, data: { type: "presenter-load-doc", doc: activeDoc } }));
-        ws.send(JSON.stringify({ type: "signal", room: DEFAULT_WS_ROOM, data: { type: "set-params", docId: activeScriptIdRef.current ?? null, appearance: appearanceRef.current } }));
-        
-        // Navigate to first chapter
-        const firstChapterId = activeDoc?.chapters?.[0]?.id ?? null;
-        if (firstChapterId) {
-          ws.send(JSON.stringify({ type: "signal", room: DEFAULT_WS_ROOM, data: { type: "presenter-goto-chapter", chapterId: firstChapterId } }));
-        }
-
-        // notify app that WS sender is available so it can re-send state
-        window.dispatchEvent(new CustomEvent("smui.ws-ready"));
-      } catch (_) {
-        /* ignore */
-      }
-    });
-
-    ws.addEventListener("message", (ev) => {
-      let msg: any = null;
-      try {
-        msg = JSON.parse(ev.data);
-      } catch (err) {
-        return;
-      }
-
-      // Forward signals from the remote presenter to the local window
-      // so the bridge hook can update state (docId, wordIndex, etc.)
-      if (msg?.type === "signal" && msg.data) {
-        window.dispatchEvent(
-          new MessageEvent("message", {
-            data: msg.data,
-            origin: window.location.origin,
-          }),
-        );
-      }
-
-      if (msg?.type === "pair-request" && msg.id) {
-        const id = String(msg.id);
-        const info = msg.info || {};
-        const label =
-          info?.name ||
-          (info?.ua ? info.ua.split(" ")[0] : `Device ${id.slice(0, 4)}`);
-        // Only keep a single paired device — replace any existing pairing with the newest
-        const next: Paired[] = [
-          {
-            id,
-            label,
-            ua: info?.ua,
-            screen: info?.screen,
-            createdAt: Date.now(),
-            lastSeen: Date.now(),
-          },
-        ];
-        save(next);
-        // send pair-ack so the phone knows it's paired
-
-        ws.send(JSON.stringify({ type: "pair-ack", id }));
-        return;
-      }
-
-      // respond to presenter 'request-state' signals by re-sending doc + params
-      if (msg?.type === "signal" && msg.data?.type === "request-state") {
-        try {
-          const activeDoc = scriptsRef.current?.find((s) => s.id === activeScriptIdRef.current) ?? null;
-          // send presenter-load-doc + set-params into the room so presenter can apply
-          ws.send(JSON.stringify({ type: "signal", room: msg.room || "smui-default", data: { type: "presenter-load-doc", doc: activeDoc } }));
-          ws.send(JSON.stringify({ type: "signal", room: msg.room || "smui-default", data: { type: "set-params", docId: activeScriptIdRef.current ?? null, appearance: appearanceRef.current } }));
-          
-          // Navigate to first chapter
-          const firstChapterId = activeDoc?.chapters?.[0]?.id ?? null;
-          if (firstChapterId) {
-            ws.send(JSON.stringify({ type: "signal", room: msg.room || "smui-default", data: { type: "presenter-goto-chapter", chapterId: firstChapterId } }));
-          }
-          
-          console.log("[Sidebar] responded to request-state with doc + params");
-        } catch (err) {
-          /* ignore */
-        }
-      }
-    });
-
-    ws.addEventListener("close", () => {
-      console.log(
-        "[Sidebar] WebSocket closed, current ws matches:",
-        ws === wsRef.current,
-      );
-      // Only nullify if this is still the current WebSocket (avoid race with StrictMode remounting)
-      if (ws === wsRef.current) {
-        wsRef.current = null;
-        setPresenterWsSender(null);
-      }
-    });
-
-    return () => {
-      // Only close if WebSocket is open or connecting (don't trigger error if already closed)
-      if (
-        ws &&
-        (ws.readyState === WebSocket.OPEN ||
-          ws.readyState === WebSocket.CONNECTING)
-      ) {
-        console.log(
-          "[Sidebar] Cleanup: closing WebSocket, state:",
-          ws.readyState,
-        );
-        ws.close();
-      }
-
-      wsRef.current = null;
-      setPresenterWsSender(null);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Listen for presenter -> app 'presenter-share-invite' messages and forward to paired phone.
-  // Prefer centralized subscription via props.on when available; fall back to window 'message'.
-  useEffect(() => {
-    const handleInvite = (data: unknown) => {
-      if (!data || typeof data !== "object" || data === null) return;
-      const rec = data as Record<string, unknown>;
-      if (typeof rec.room !== "string") return;
-      const room = rec.room;
-      console.log("[Sidebar] presenter-share-invite received, room:", room);
-
-      const phoneId = paired[0]?.id;
-      const ws = wsRef.current;
-      console.log(
-        "[Sidebar] phoneId:",
-        phoneId,
-        "wsState:",
-        ws?.readyState,
-        "paired:",
-        paired,
-      );
-      if (phoneId && ws && ws.readyState === 1) {
-        ws.send(
-          JSON.stringify({
-            type: "presenter-share-invite",
-            to: phoneId,
-            room,
-          }),
-        );
-        console.log("[Sidebar] sent presenter-share-invite to phone:", phoneId);
-      } else {
-        console.warn(
-          "[Sidebar] Cannot send invite - phoneId:",
-          phoneId,
-          "wsState:",
-          ws?.readyState,
-        );
-      }
-    };
-
-    if (on) {
-      // subscribe via centralized hook
-      const unsub = on("presenter-share-invite", (payload: unknown) =>
-        handleInvite(payload),
-      );
-      return unsub;
-    }
-
-    // fallback: listen to window.postMessage
-    function onWindowMessage(e: MessageEvent) {
-      if (e.origin !== window.location.origin) return;
-      handleInvite(e.data || {});
-    }
-    window.addEventListener("message", onWindowMessage);
-    return () => window.removeEventListener("message", onWindowMessage);
-  }, [paired, on]);
-
-  const generatePairUrl = () => {
-    const proto = location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${proto}//${location.host}/ws`;
-    return `${location.origin}/pair.html?ws=${encodeURIComponent(wsUrl)}`;
-  };
-
-  useEffect(() => {
-    if (!showQr) return;
-    const url = generatePairUrl();
-    QRCode.toDataURL(url, { margin: 1, width: 280 })
-      .then((d: string) => setQrDataUrl(d))
-      .catch(() => setQrDataUrl(null));
-  }, [showQr]);
-
-  const selectPaired = async (p: Paired | null) => {
-    // p === null -> None selected
-    if (!p) return;
-
-    // open presenter window locally
-    onOpenTeleprompter?.();
-
-    // Move presenter to primary (screen 0) then resize it to the reported paired-device opener size (if available).
-
-    const win = presenterWindowRef?.current;
-    const primary =
-      screens?.screens?.find((s) => s.isPrimary) ??
-      screens?.screens?.[0] ??
-      null;
-
-    // prefer the *paired device's* reported screen (sent by pair.html); fall back to controller's screen
-    const remoteW = p?.screen?.width ?? null;
-    const remoteH = p?.screen?.height ?? null;
-    const targetW = remoteW ?? window.screen?.width ?? window.innerWidth;
-    const targetH = remoteH ?? window.screen?.height ?? window.innerHeight;
-
-    if (win && !win.closed && primary) {
-      // quick shrink then move/resize for a smooth effect
-      win.resizeTo(320, 200);
-      setTimeout(() => {
-        win.moveTo(primary.left ?? 0, primary.top ?? 0);
-        setTimeout(() => {
-          // resize to the *paired device* screen when available
-          win.resizeTo(
-            Math.max(320, Math.round(targetW)),
-            Math.max(200, Math.round(targetH)),
-          );
-          win.focus?.();
-        }, 300);
-      }, 200);
-    }
-
-    // use shared/default room for WS (unified-room mode)
-    const roomId = "smui-default";
-    // open presenter in WS mode so controller <-> presenter communicate over signaling
-    const presenterUrl = `${location.origin}/app.html?transport=ws#${roomId}`;
-
-    // notify paired phone to open the presenter URL (targeted by id)
-    try {
-      const ws = wsRef?.current;
-      if (ws && ws.readyState === 1) {
-        ws.send(
-          JSON.stringify({
-            type: "presenter-open",
-            url: presenterUrl,
-            to: p.id,
-          }),
-        );
-      }
-    } catch (err) {
-      console.warn("[Sidebar] ws.send(presenter-open) failed", err);
-    }
-
-    // --- start controller-side WebRTC (join room + offer)
-
-    const ws = wsRef.current;
-    // join the temporary room on the signaling server
-    if (ws && ws.readyState === 1) {
-      ws.send(JSON.stringify({ type: "join", room: roomId }));
-    }
-
-    const pc = new RTCPeerConnection({
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-    });
-
-    // forward local ICE candidates to signaling server
-    pc.addEventListener("icecandidate", (e) => {
-      if (!e.candidate) return;
-
-      ws?.send(JSON.stringify({ type: "ice", candidate: e.candidate }));
-    });
-
-    // data channel for control messages
-    const dc = pc.createDataChannel("smui-control");
-    dc.onopen = () => console.log("[webrtc] control channel open", roomId);
-    dc.onmessage = (ev) => console.log("[webrtc] dc msg", ev.data);
-
-    // try to add local camera (optional) — best-effort
-
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: false,
-    });
-    for (const t of stream.getTracks()) pc.addTrack(t, stream);
-
-    // handle remote tracks (not strictly needed on controller)
-    pc.addEventListener("track", (ev) => {
-      console.log("[webrtc] remote track:", ev.streams && ev.streams[0]);
-    });
-
-    // create offer and send via signaling server
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-
-    ws?.send(JSON.stringify({ type: "offer", sdp: offer.sdp }));
-
-    // listen for signaling messages for this room
-    const onWsMessage = (ev: MessageEvent) => {
-      const msg = JSON.parse(ev.data);
-
-      // Control signals from presenter/controller -> forward into app runtime
-      if (msg?.type === "signal" && msg.data) {
-        // forward the embedded payload (e.g. presenter-play / presenter-load-doc)
-        window.postMessage(msg.data, window.location.origin);
-        return;
-      }
-
-      // Cached room state (seed late joiners)
-      if (msg?.type === "state" && msg.data) {
-        const d = msg.data as any;
-        if (d.payload) window.postMessage({ type: "presenter-init", ...d.payload }, window.location.origin);
-        if (typeof d.playing === "boolean") window.postMessage({ type: "presenter-playing", playing: d.playing }, window.location.origin);
-        if (typeof d.mic === "boolean") window.postMessage({ type: "presenter-mic", active: d.mic }, window.location.origin);
-        if (typeof d.wordIndex === "number") window.postMessage({ type: "presenter-word-index", index: d.wordIndex }, window.location.origin);
-        return;
-      }
-
-      // answer
-      if (msg?.type === "answer") {
-        const desc = {
-          type: "answer",
-          sdp: msg.sdp,
-        } as RTCSessionDescriptionInit;
-        pc.setRemoteDescription(desc).catch((err) =>
-          console.warn("[webrtc] setRemoteDescription failed", err),
-        );
-        return;
-      }
-      // ice candidate
-      if (msg?.type === "ice" && msg.candidate) {
-        pc.addIceCandidate(msg.candidate).catch(() => {});
-        return;
-      }
-    };
-
-    ws?.addEventListener("message", onWsMessage);
-
-    // register a WS sender so usePresenterBridge.send() can forward messages to presenter
-    setPresenterWsSender((msg) => {
-      try {
-        const s = wsRef.current;
-        if (!s || s.readyState !== WebSocket.OPEN) return false;
-        s.send(JSON.stringify({ type: "signal", room: roomId, data: msg }));
-        return true;
-      } catch (err) {
-        return false;
-      }
-    });
-
-    // seed the newly-joined room's presenter with the current doc + appearance
-    try {
-      const activeDoc = scriptsRef.current?.find((s) => s.id === activeScriptIdRef.current) ?? null;
-      wsRef.current?.send(JSON.stringify({ type: "signal", room: roomId, data: { type: "presenter-load-doc", doc: activeDoc } }));
-      wsRef.current?.send(JSON.stringify({ type: "signal", room: roomId, data: { type: "set-params", docId: activeScriptIdRef.current ?? null, appearance: appearanceRef.current } }));
-      
-      // Navigate to first chapter
-      const firstChapterId = activeDoc?.chapters?.[0]?.id ?? null;
-      if (firstChapterId) {
-        wsRef.current?.send(JSON.stringify({ type: "signal", room: roomId, data: { type: "presenter-goto-chapter", chapterId: firstChapterId } }));
-      }
-    } catch (err) {
-      /* ignore */
-    }
-
-    // notify app that a per-room WS sender is available
-    window.dispatchEvent(new CustomEvent("smui.ws-ready", { detail: { room: roomId } }));
-
-    // cleanup: remove listeners when the presenter window/tab closes
-    const cleanup = () => {
-      ws?.removeEventListener("message", onWsMessage);
-      pc.close();
-      setPresenterWsSender(null);
-    };
-    window.addEventListener("beforeunload", cleanup, { once: true });
-
-    // store lastSeen — single paired device: update/replace stored entry
-    save([{ ...(paired[0] ?? p), lastSeen: Date.now() }]);
-  };
-
-  const detectDeviceType = (
-    ua?: string | undefined,
-    screen?: { width?: number; height?: number } | undefined,
-  ) => {
-    const u = String(ua || "").toLowerCase();
-    const sw = screen?.width ?? 0;
-    if (
-      /ipad|tablet|playbook/.test(u) ||
-      (/android/.test(u) && !/mobile/.test(u))
-    )
-      return "Tablet";
-    if (/mobi|iphone|android|phone/.test(u)) return "Phone";
-    if (sw && sw <= 480) return "Phone";
-    if (sw && sw <= 1100) return "Tablet";
-    return "Computer";
-  };
-
-  const items = paired.length
-    ? paired.map((d) => ({
-        id: d.id,
-        label: `${d.label ?? d.id} — ${detectDeviceType(d.ua, d.screen)}${d.screen?.width && d.screen?.height ? ` • ${d.screen.width}×${d.screen.height}` : ""}`,
-      }))
-    : [{ id: "-1", label: "None" }];
-
-  return (
-    <div>
-      <ScriptList
-        items={items}
-        activeId={paired.length ? paired[0].id : "-1"}
-        onSelect={(id) => {
-          const p = paired.find((x) => x.id === id) ?? null;
-          selectPaired(p);
-        }}
-        onAdd={() => {
-          setShowQr(!showQr);
-        }}
-        /* no onRemove -> remove button hidden */
-      />
-
-      {showQr && (
-        <div className="mt-3 flex gap-2">
-          <div
-            style={{
-              width: 120,
-              height: 120,
-              background: "white",
-              padding: 6,
-              borderRadius: 8,
-            }}
-          >
-            {qrDataUrl ? (
-              <img
-                src={qrDataUrl}
-                alt="pair-qr"
-                style={{ width: "100%", height: "100%" }}
-              />
-            ) : (
+      {/* Cast (visual-only QR) */}
+      <SidebarSection title="Mobile Viewer" icon="phone" forceOpen={true}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div className="flex-1">
+            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
               <div
                 style={{
-                  width: "100%",
-                  height: "100%",
-                  display: "grid",
-                  placeItems: "center",
-                  color: "#666",
+                  width: 160,
+                  height: 160,
+                  background: "white",
+                  padding: 8,
+                  borderRadius: 8,
                 }}
               >
-                QR
+                {castQrDataUrl ? (
+                  <img
+                    src={castQrDataUrl}
+                    alt="presenter-qr"
+                    style={{ width: "100%", height: "100%" }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      display: "grid",
+                      placeItems: "center",
+                      color: "#666",
+                    }}
+                  >
+                    QR
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-          <div style={{ flex: 1 }}>
-            <div className="text-xs text-white/40">
-              Scan this with your phone
             </div>
-            <div style={{ marginTop: 8 }}>
-              <button
-                className="rounded-md bg-white/6 hover:bg-white/8 border border-white/6 py-1 px-2 text-sm text-white/90"
-                onClick={() => {
-                  navigator.clipboard.writeText(generatePairUrl());
-                }}
-              >
-                Copy link
-              </button>
+            <div className="text-xs text-white/55 mt-2">
+              On phone/tablet → scan QR
             </div>
           </div>
         </div>
-      )}
+      </SidebarSection>
+
+      <div className="h-10" />
     </div>
   );
 }

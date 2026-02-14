@@ -2,7 +2,10 @@ const CACHE_NAME = 'smui-static-v3';
 const PRECACHE = [
   '/index.html',
   '/app.html',
-  '/manifest.webmanifest'
+  '/pair.html',
+  '/manifest.webmanifest',
+  '/favicon.ico',
+  '/styles.css'
 ];
 
 self.addEventListener('install', (evt) => {

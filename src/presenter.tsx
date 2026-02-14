@@ -756,7 +756,20 @@ function Presenter() {
       pc = null;
     }
 
-    (async () => {
+    // use a reconnecting WS connection (connect() will be invoked below)
+    let stopped = false;
+    let reconnectAttempts = 0;
+    let reconnectTimer: number | null = null;
+
+    const scheduleReconnect = () => {
+      if (stopped) return;
+      reconnectAttempts += 1;
+      const delay = Math.min(1000 * Math.pow(2, Math.max(0, reconnectAttempts - 1)), 30000);
+      console.debug(`Presenter: scheduling WS reconnect in ${delay}ms (attempt ${reconnectAttempts})`);
+      reconnectTimer = window.setTimeout(() => connect(), delay) as unknown as number;
+    };
+
+    function connect() {
       ws = new WebSocket(
         (location.protocol === "https:" ? "wss:" : "ws:") +
           "//" +
@@ -776,6 +789,46 @@ function Presenter() {
           /* ignore */
         }
 
+        // If presenter was opened independently (no window.opener), announce ourselves
+        // so controller / Composer can show this remote presenter as a device. Persist
+        // the pair id so reconnects announce the same device id.
+        try {
+          if (!window.opener) {
+            const storageKey = "smui.presenterPairId";
+            let id: string | null = null;
+            try {
+              id = localStorage.getItem(storageKey);
+            } catch (_) {
+              id = null;
+            }
+
+            if (!id) {
+              id = `presenter-${Math.random().toString(36).slice(2, 8)}`;
+              try {
+                localStorage.setItem(storageKey, id);
+              } catch (_) {
+                /* ignore */
+              }
+            }
+
+            const payload = {
+              type: "pair-request",
+              id,
+              info: {
+                ua: navigator.userAgent,
+                screen: { width: window.screen?.width || 0, height: window.screen?.height || 0 },
+                origin: "presenter",
+              },
+            } as any;
+
+            ws?.send(JSON.stringify(payload));
+            try { (window as any).__smui_presenterPairId = id; } catch (_) {}
+            console.debug("Presenter: announced pair-request (persistent id)", id);
+          }
+        } catch (_) {
+          /* ignore */
+        }
+
         console.log("[webrtc] joined room", room);
       });
 
@@ -791,6 +844,25 @@ function Presenter() {
 
         // Control signal delivered via signaling server -> treat as presenter message
         if (msg?.type === "signal" && msg.data) {
+          // controller probe -> re-announce pair (helps controller reloads)
+          try {
+            if (msg.data?.type === "presenter-probe") {
+              const storageKey = "smui.presenterPairId";
+              let id: string | null = null;
+              try { id = localStorage.getItem(storageKey); } catch (_) { id = null; }
+              if (!id) {
+                id = `presenter-${Math.random().toString(36).slice(2, 8)}`;
+                try { localStorage.setItem(storageKey, id); } catch (_) {}
+              }
+              const payload = { type: "pair-request", id, info: { ua: navigator.userAgent, screen: { width: window.screen?.width || 0, height: window.screen?.height || 0 }, origin: "presenter" } } as any;
+              try { ws?.send(JSON.stringify(payload)); } catch (_) {}
+              console.debug("Presenter: responded to presenter-probe", id);
+              return;
+            }
+          } catch (_) {
+            /* ignore */
+          }
+
           console.log(
             "[Presenter WS] signal detected, processing data:",
             msg.data.type,
@@ -913,11 +985,28 @@ function Presenter() {
         }
       });
 
-      ws.addEventListener("close", cleanup);
+      ws.addEventListener("close", (ev) => {
+        console.debug("Presenter WS closed", ev?.reason || ev);
+        cleanup();
+        if (!stopped) scheduleReconnect();
+      });
       window.addEventListener("beforeunload", cleanup);
-    })();
+    }
+
+    // start first connection
+    connect();
 
     return () => {
+      // stop reconnect attempts and clear any scheduled retry
+      stopped = true;
+      if (typeof reconnectTimer === "number") {
+        clearTimeout(reconnectTimer as unknown as number);
+        reconnectTimer = null;
+      }
+
+      // remove global unload handler registered above
+      window.removeEventListener("beforeunload", cleanup);
+
       // clear any pending state-retry timers
       if (stateRetryTimerRef.current) {
         window.clearInterval(stateRetryTimerRef.current);
@@ -1052,6 +1141,25 @@ function Presenter() {
             background: transparent;
         }
         /* When you truly want no visuals and no hit area, set display:none */
+
+        /* pseudo-fullscreen (iOS fallback) */
+        .smui-pseudo-fullscreen {
+          height: 100vh !important;
+          width: 100vw !important;
+          overflow: hidden !important;
+          position: fixed !important;
+          inset: 0 !important;
+          z-index: 2147483647 !important;
+          background: #000 !important;
+        }
+        .smui-pseudo-fullscreen #presenter-root-content {
+          position: fixed !important;
+          inset: 0 !important;
+          width: 100vw !important;
+          height: 100vh !important;
+          overflow: hidden !important;
+        }
+
     `;
     document.head.appendChild(s);
     return () => {
@@ -1059,8 +1167,17 @@ function Presenter() {
     };
   }, []);
 
+  const [pseudoFsActive, setPseudoFsActive] = React.useState(false);
+  const isIos = typeof navigator !== "undefined" && /iP(ad|hone|od)/i.test(navigator.userAgent) || (typeof navigator !== "undefined" && navigator.platform === "MacIntel" && (navigator as any).maxTouchPoints > 1);
+
+  React.useEffect(() => {
+    if (pseudoFsActive) document.documentElement.classList.add("smui-pseudo-fullscreen");
+    else document.documentElement.classList.remove("smui-pseudo-fullscreen");
+    return () => document.documentElement.classList.remove("smui-pseudo-fullscreen");
+  }, [pseudoFsActive]);
+
   return (
-    <div style={rootStyle} className={appearance.mirrorMode ? "mirror" : ""}>
+    <div id="presenter-root-content" style={rootStyle} className={appearance.mirrorMode ? "mirror" : ""}>
       {/* hidden focus anchor used by focus-keepalive (tabIndex allows programmatic focus) */}
       <div
         id="presenter-focus-anchor"
@@ -1074,6 +1191,8 @@ function Presenter() {
           overflow: "hidden",
         }}
       />
+     
+
       {/* Centerline (subtle + prominent) — visibility and height controlled by appearance */}
       {appearance.showCenterline !== false && (
         <>

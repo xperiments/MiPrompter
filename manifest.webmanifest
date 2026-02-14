@@ -1,7 +1,7 @@
 {
   "name": "Script Manager — Teleprompter",
   "short_name": "Prompter",
-  "start_url": "/",
+  "start_url": "/app.html?transport=ws",
   "display": "standalone",
   "background_color": "#0b1020",
   "theme_color": "#0b1020",

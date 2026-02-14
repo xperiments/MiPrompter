@@ -14,6 +14,8 @@ import { useLocalStorage } from "./hooks/useLocalStorage";
 import { useInitialPermissionsGate } from "./hooks/useInitialPermissionsGate";
 import { usePresenterBridge } from "./hooks/usePresenterBridge";
 import { useUiStore, DEFAULT_APPEARANCE } from "./stores/ui";
+import PairedDeviceList from "./components/sidebar/PairedDeviceList";
+import { useScreenDetection } from "./hooks/useScreenDetection"; 
 import { useAppSpeechControl } from "./hooks/useAppSpeechControl"; // New Hook
 import { hasPresenterWsSender } from "./lib/presenter-transport";
 
@@ -112,6 +114,9 @@ export default function App() {
   // permission overlay + priming logic extracted into a hook
   const ls = useLocalStorage();
   const { showOverlay, onOverlayClick } = useInitialPermissionsGate();
+
+  // screen detection (used by pairing logic)
+  const screens = useScreenDetection();
 
   // Presenter bridge: message handling, lifecycle polling and small helpers are
   // extracted to a hook. We expose the same refs/state shape used elsewhere
@@ -949,6 +954,17 @@ export default function App() {
 
   return (
     <>
+      {/* Mount pairing logic at App level (non-visual) */}
+      <PairedDeviceList
+        presenterWindowRef={presenterWindowRef}
+        onOpenTeleprompter={onOpenTeleprompterFromEditor}
+        screens={screens}
+        on={on}
+        scripts={docs}
+        activeScriptId={activeDocId}
+        appearance={presenter}
+      />
+
       <AppShell
         sidebarCollapsed={sidebarCollapsed}
         onToggleSidebar={() => setSidebarCollapsed((v) => !v)}
