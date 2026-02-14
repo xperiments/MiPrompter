@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { AppShell } from "./components/AppShell";
+import Composer from "./components/Composer";
 import { Sidebar } from "./components/Sidebar";
 import { ScriptArea, type ScriptAreaHandle } from "./components/ScriptArea";
 import { AddScriptModal } from "./components/modals/AddScriptModal";
@@ -1149,6 +1150,7 @@ export default function App() {
             }}
           />
         }
+        composer={<Composer />}
         onFullscreenChange={handleFullscreenChange}
         overlay={
           <>

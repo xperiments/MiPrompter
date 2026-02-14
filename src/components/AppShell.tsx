@@ -4,6 +4,7 @@ import Icon from "./Icon";
 export function AppShell(props: {
   left: React.ReactNode;
   main: React.ReactNode;
+  composer?: React.ReactNode;
   overlay?: React.ReactNode;
   sidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
@@ -11,6 +12,9 @@ export function AppShell(props: {
 }) {
   const panelRef = React.useRef<HTMLDivElement | null>(null);
   const [isFullscreen, setIsFullscreen] = React.useState(false);
+  const [activeTab, setActiveTab] = React.useState<"editor" | "composer">(
+    "editor",
+  );
 
   React.useEffect(() => {
     const onChange = () => {
@@ -118,7 +122,31 @@ export function AppShell(props: {
             </div>
           )}
 
-          <div className="flex-1 bg-[color:var(--bg-1)]">{props.main}</div>
+          <div className="flex-1 bg-[color:var(--bg-1)]">
+            <div className="h-full flex flex-col">
+              <div className="px-3 py-2 flex items-center gap-2 border-b border-[color:var(--line)] bg-[color:var(--bg-0)]">
+                <button
+                  onClick={() => setActiveTab("editor")}
+                  aria-pressed={activeTab === "editor"}
+                  className={`px-3 py-1 rounded-md text-sm ${activeTab === "editor" ? "bg-white/6 border border-white/10 text-white" : "text-white/60 hover:bg-white/3"}`}
+                >
+                  Editor
+                </button>
+
+                <button
+                  onClick={() => setActiveTab("composer")}
+                  aria-pressed={activeTab === "composer"}
+                  className={`px-3 py-1 rounded-md text-sm ${activeTab === "composer" ? "bg-white/6 border border-white/10 text-white" : "text-white/60 hover:bg-white/3"}`}
+                >
+                  Composer
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-auto">
+                {activeTab === "editor" ? props.main : props.composer}
+              </div>
+            </div>
+          </div>
         </div>
 
         {props.overlay}
