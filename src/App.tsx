@@ -15,6 +15,7 @@ import { useInitialPermissionsGate } from "./hooks/useInitialPermissionsGate";
 import { usePresenterBridge } from "./hooks/usePresenterBridge";
 import { useUiStore, DEFAULT_APPEARANCE } from "./stores/ui";
 import { useAppSpeechControl } from "./hooks/useAppSpeechControl"; // New Hook
+import { hasPresenterWsSender } from "./lib/presenter-transport";
 
 const APPEARANCE_STORAGE_KEY = "smui.appearance.v1";
 
@@ -137,6 +138,11 @@ export default function App() {
   } = presenterState;
   const { presenterDisplayedDocRef, presenterDisplayedChapterRef } =
     displayedRefs;
+
+  const isPresenterActive = Boolean(
+    (presenterWindowRef.current && !presenterWindowRef.current.closed) ||
+      hasPresenterWsSender(),
+  );
 
   // App-side Speech State (Controlled by UI)
   const [micActive, setMicActive] = useState(false);
@@ -993,10 +999,7 @@ export default function App() {
               applyChapterChange(activeDocId, chapterId, text, true);
 
               // Send updated chapter text to presenter if it's displaying this doc/chapter
-              if (
-                presenterWindowRef.current &&
-                !presenterWindowRef.current.closed
-              ) {
+              if (isPresenterActive) {
                 if (presenterDisplayedDocRef.current === activeDocId) {
                   send({ type: "update-chapter", chapterId, text });
                 }
@@ -1006,11 +1009,8 @@ export default function App() {
               handleSplitChapter(chapterId, beforeText, remainderText)
             }
             onGotoChapter={(chapterId: string) => {
-              // If presenter is open, send the jump immediately.
-              if (
-                presenterWindowRef.current &&
-                !presenterWindowRef.current.closed
-              ) {
+              // If presenter is open (locally or via WS), send the jump immediately.
+              if (isPresenterActive) {
                 // Ensure presenter is displaying the same doc first — if not, send the doc
                 if (
                   presenterDisplayedDocRef.current !== activeDocId &&
@@ -1137,9 +1137,7 @@ export default function App() {
                 (e) => e.docId !== activeDocId,
               );
             }}
-            presenterWindowOpen={Boolean(
-              presenterWindowRef.current && !presenterWindowRef.current.closed,
-            )}
+            presenterWindowOpen={isPresenterActive}
             onPlay={onPlayFromEditor}
             micActive={micActive}
             playing={presenterIsPlaying}

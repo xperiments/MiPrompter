@@ -1,13 +1,31 @@
-// Placeholder transport file - WebSocket functionality has been removed
-// This file is kept for backwards compatibility but no longer provides WS sender functionality
-
 export type PresenterSender = (msg: any) => boolean;
 
+let _presenterWsSender: PresenterSender | null = null;
+
+/**
+ * Register a function that will be used to send messages to a remote presenter
+ * via the signaling WebSocket (room-aware). Pass `null` to clear the sender.
+ */
 export function setPresenterWsSender(s: PresenterSender | null) {
-  // No-op - WebSocket sender removed
+  _presenterWsSender = s;
 }
 
+/**
+ * Send a message to the presenter via the registered WS sender (if any).
+ * Returns true when a sender exists and the send was attempted.
+ */
 export function sendToPresenterViaWs(msg: any): boolean {
-  // No-op - WebSocket functionality removed
-  return false;
+  try {
+    if (!_presenterWsSender) return false;
+    return Boolean(_presenterWsSender(msg));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Returns whether a WS sender has been registered (useful to avoid race conditions)
+ */
+export function hasPresenterWsSender(): boolean {
+  return Boolean(_presenterWsSender);
 }

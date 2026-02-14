@@ -31,6 +31,12 @@ function mergeRoomState(roomId, data) {
   if (data.type === "presenter-load-doc" && data.doc) {
     next.payload = { ...(next.payload || {}), doc: data.doc };
     next.payload.docId = data.doc?.id || next.payload.docId;
+    next.currentChapterId = data.doc?.chapters?.[0]?.id || null;
+    next.wordIndex = 0;
+  } else if (data.type === "presenter-goto-chapter") {
+    next.currentChapterId = data.chapterId || null;
+    // Word index reset to 0 (or peer will send actual word-index update later)
+    next.wordIndex = 0;
   } else if (data.type === "set-params") {
     next.payload = { ...(next.payload || {}), ...data };
   } else if (data.type === "presenter-playing") {

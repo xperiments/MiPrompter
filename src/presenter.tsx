@@ -235,12 +235,26 @@ function reducer(state: PresenterState, action: Action): PresenterState {
         wordIndex: 0,
       };
     }
-    case "set-chapter":
+    case "set-chapter": {
+      const cid = action.chapterId ?? null;
+      let nextWordIndex = 0;
+      const doc = state.payload.doc;
+      if (cid && doc) {
+        const tokens = parseScriptToTokens(
+          doc,
+          Boolean(state.payload.appearance?.preserveFormatting),
+        );
+        const first = tokens.find((t) => t.isWord && t.id.startsWith(`${cid}-`));
+        if (first && typeof first.index === "number" && first.index >= 0) {
+          nextWordIndex = first.index;
+        }
+      }
       return {
         ...state,
-        currentChapterId: action.chapterId ?? null,
-        wordIndex: 0,
+        currentChapterId: cid,
+        wordIndex: nextWordIndex,
       };
+    }
     case "set-word-index":
       return { ...state, wordIndex: action.index };
     case "reset":
@@ -466,6 +480,18 @@ function PrompterView({
   );
 }
 
+export function usePresenterParams() {
+  return useMemo(() => {
+    const p = new URLSearchParams(window.location.search);
+    return {
+      display: p.get("display"),
+      mirror: p.get("mirror") === "true",
+      font: p.get("font") ?? "inter",
+      transport: p.get("transport") ?? null,
+    };
+  }, []);
+}
+
 function Presenter() {
   const [state, dispatch] = React.useReducer(reducer, initialState);
 
@@ -473,18 +499,62 @@ function Presenter() {
     dispatch({ type: "init", incoming: incoming || {} });
   }, []);
 
+  // transport params & signaling WS ref (used when presenter opened with ?transport=ws#room)
+  const presenterParams = usePresenterParams();
+  const signalingWsRef = React.useRef<WebSocket | null>(null);
+  // Retry helpers used when `get-state` returns an empty cached state — the
+  // presenter will re-issue `get-state` + `request-state` a few times with a
+  // short backoff so late-joining controllers can seed the room reliably.
+  const stateRetryTimerRef = React.useRef<number | null>(null);
+  const stateRetryAttemptsRef = React.useRef(0);
+  const MAX_STATE_REQUEST_RETRIES = 6;
+
+  const sendToController = React.useCallback((msg: any) => {
+    const origin = window.location.origin;
+    const room = (location.hash || "").replace("#", "").trim();
+
+    // WS transport: forward as a `signal` to the signaling server + room
+    if (presenterParams.transport === "ws") {
+      const ws = signalingWsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN && room) {
+        try {
+          ws.send(JSON.stringify({ type: "signal", room, data: msg }));
+          return true;
+        } catch (_) {
+          return false;
+        }
+      }
+    }
+
+    // Fallback to postMessage for local controller
+    const w = window.opener || window.parent;
+    if (w && (w as any).postMessage) {
+      (w as Window).postMessage(msg, origin);
+      return true;
+    }
+    return false;
+  }, [presenterParams.transport]);
+
   // Provide a single message handler that works for both postMessage and WS-sourced messages
   const handleIncoming = React.useCallback(
     async (data: any) => {
       if (!data || typeof data.type !== "string") return;
+      console.log("[Presenter] handleIncoming:", data.type, data);
       dispatch({ type: "cmd", cmd: data.type });
 
       switch (data.type) {
         case "set-params":
         case "presenter-init":
+          console.log("[Presenter] Applying init data:", data);
           applyInit(data);
           break;
         case "presenter-load-doc":
+          console.log(
+            "[Presenter] Loading doc:",
+            data.doc?.name ?? "unknown",
+            "chapters:",
+            data.doc?.chapters?.length ?? 0,
+          );
           if (data.doc) dispatch({ type: "load-doc", doc: data.doc });
           break;
         case "play":
@@ -502,41 +572,23 @@ function Presenter() {
         case "set-word-index":
           dispatch({ type: "set-word-index", index: data.index });
           break;
-        case "presenter-goto-chapter":
+        case "presenter-goto-chapter": {
           const cid =
             typeof data.chapterId === "string" ? data.chapterId : null;
           dispatch({ type: "set-chapter", chapterId: cid });
 
-          // If the doc is already loaded we can compute the first token index
-          // for the requested chapter and jump immediately.
-
-          const doc = state.payload.doc ?? null;
-          if (cid && doc) {
-            const tok = parseScriptToTokens(
-              doc,
-              Boolean(state.payload.appearance?.preserveFormatting),
-            );
-            const first = tok.find(
-              (t) => t.isWord && t.id.startsWith(`${cid}-`),
-            );
-            if (first && typeof first.index === "number" && first.index >= 0) {
-              dispatch({ type: "set-word-index", index: first.index });
-            }
-          }
-
           // inform controller that the chapter was applied
-          const w = window.opener || window.parent;
-          if (w)
-            w.postMessage(
-              {
-                type: "presenter-chapter-loaded",
-                docId: state.payload.doc?.id ?? null,
-                chapterId: cid,
-              },
-              window.location.origin,
-            );
+          // we use state.payload.doc directly; if this arrives exactly at the same time as load-doc
+          // it might be slightly stale for this telemetry message, but the reducer
+          // will have handled the actual state correctly.
+          sendToController({
+            type: "presenter-chapter-loaded",
+            docId: state.payload.doc?.id ?? null,
+            chapterId: cid,
+          });
 
           break;
+        }
         case "presenter-playing":
           if (data.playing) dispatch({ type: "play" });
           else dispatch({ type: "pause" });
@@ -588,12 +640,7 @@ function Presenter() {
 
             document.documentElement.requestFullscreen?.().catch(() => {});
 
-            const w = window.opener || window.parent;
-            if (w)
-              w.postMessage(
-                { type: "presenter-enter-pressed" },
-                window.location.origin,
-              );
+            sendToController({ type: "presenter-enter-pressed" });
           };
 
           window.addEventListener("keydown", onEnter, {
@@ -604,21 +651,25 @@ function Presenter() {
         }
       }
     },
-    [applyInit],
+    [applyInit, state.payload.doc, state.payload.appearance],
   );
 
+  // Use a ref to ensure event listeners always call the latest version of handleIncoming
+  // with the latest state captured via dependencies above.
+  const handleIncomingRef = React.useRef(handleIncoming);
+  React.useEffect(() => {
+    handleIncomingRef.current = handleIncoming;
+  }, [handleIncoming]);
+
   // postMessage -> existing hook
-  useWindowMessages((data) => handleIncoming(data));
+  useWindowMessages((data) => handleIncomingRef.current(data));
 
   React.useEffect(() => {
     const origin = window.location.origin;
     const id = window.setTimeout(() => {
       dispatch({ type: "ready" });
 
-      (window.opener || window.parent)?.postMessage?.(
-        { type: "presenter-ready" },
-        origin,
-      );
+      sendToController({ type: "presenter-ready" });
     }, 50);
     return () => clearTimeout(id);
   }, []);
@@ -626,10 +677,7 @@ function Presenter() {
   // Notify controller when presenter unloads/closes so controller lifecycle remains accurate
   React.useEffect(() => {
     const notifyClosed = () => {
-      (window.opener || window.parent)?.postMessage?.(
-        { type: "presenter-unload" },
-        window.location.origin,
-      );
+      sendToController({ type: "presenter-unload" });
     };
     window.addEventListener("beforeunload", notifyClosed);
     window.addEventListener("unload", notifyClosed);
@@ -643,22 +691,10 @@ function Presenter() {
   React.useEffect(() => {
     if (!state.ready) return;
 
-    const w = window.opener || window.parent;
-    if (w) {
-      w.postMessage(
-        { type: "presenter-playing", playing: state.playing },
-        window.location.origin,
-      );
-      w.postMessage(
-        { type: "presenter-mic", active: state.mic },
-        window.location.origin,
-      );
-      // Notify controller of wordIndex changes so the App can sync its UI/hook
-      w.postMessage(
-        { type: "presenter-word-index", index: state.wordIndex },
-        window.location.origin,
-      );
-    }
+    sendToController({ type: "presenter-playing", playing: state.playing });
+    sendToController({ type: "presenter-mic", active: state.mic });
+    // Notify controller of wordIndex changes so the App can sync its UI/hook
+    sendToController({ type: "presenter-word-index", index: state.wordIndex });
   }, [state.playing, state.mic, state.wordIndex, state.ready]);
 
   React.useEffect(() => {
@@ -685,30 +721,6 @@ function Presenter() {
     );
   }, [state.payload.doc, appearance.preserveFormatting]);
 
-  // When the active chapter id changes (or a new doc loads) ensure the
-  // presenter scrolls to the first word of that chapter by setting
-  // the global wordIndex accordingly.
-  React.useEffect(() => {
-    const cid = state.currentChapterId;
-    const doc = state.payload.doc ?? null;
-    if (!cid || !doc) return;
-    const tok = parseScriptToTokens(
-      doc,
-      appearance.preserveFormatting || false,
-    );
-    const first = tok.find((t) => t.isWord && t.id.startsWith(`${cid}-`));
-    if (first && typeof first.index === "number" && first.index >= 0) {
-      // only update when different to avoid unnecessary re-renders
-      if (first.index !== state.wordIndex) {
-        dispatch({ type: "set-word-index", index: first.index });
-      }
-    }
-  }, [
-    state.currentChapterId,
-    state.payload.doc,
-    appearance.preserveFormatting,
-  ]);
-
   // --- Camera handling (presenter-side) ---
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
   const overlayVideoRef = React.useRef<HTMLVideoElement | null>(null);
@@ -718,7 +730,10 @@ function Presenter() {
 
   // WebRTC: if presenter is opened with a hash (roomId), join signaling and answer offers
   React.useEffect(() => {
-    const room = (location.hash || "").replace("#", "").trim();
+    const DEFAULT_WS_ROOM = "smui-default";
+
+    let room = (location.hash || "").replace("#", "").trim();
+    if (!room && presenterParams.transport === "ws") room = DEFAULT_WS_ROOM;
     if (!room) return;
 
     let ws: WebSocket | null = null;
@@ -729,6 +744,14 @@ function Presenter() {
 
       pc?.close();
 
+      // clear any pending state-retry timers
+      if (stateRetryTimerRef.current) {
+        window.clearInterval(stateRetryTimerRef.current);
+        stateRetryTimerRef.current = null;
+        stateRetryAttemptsRef.current = 0;
+      }
+
+      signalingWsRef.current = null;
       ws = null;
       pc = null;
     }
@@ -741,8 +764,17 @@ function Presenter() {
           "/ws",
       );
 
+      // expose signaling WS so presenter can send control signals back to controller
+      signalingWsRef.current = ws;
+
       ws.addEventListener("open", () => {
         ws?.send(JSON.stringify({ type: "join", room }));
+        // explicitly request cached room state so late-join presenters always receive doc/appearance/state
+        try {
+          ws?.send(JSON.stringify({ type: "get-state", room }));
+        } catch (err) {
+          /* ignore */
+        }
 
         console.log("[webrtc] joined room", room);
       });
@@ -752,6 +784,80 @@ function Presenter() {
         try {
           msg = JSON.parse(ev.data);
         } catch (_) {
+          return;
+        }
+
+        console.log("[Presenter WS] message received:", msg?.type, msg);
+
+        // Control signal delivered via signaling server -> treat as presenter message
+        if (msg?.type === "signal" && msg.data) {
+          console.log(
+            "[Presenter WS] signal detected, processing data:",
+            msg.data.type,
+          );
+          try {
+            handleIncomingRef.current(msg.data);
+          } catch (err) {
+            console.warn("[webrtc] failed to handle incoming signal", err);
+          }
+          return;
+        }
+
+        // Cached room state (seed late joiners)
+        if (msg?.type === "state" && msg.data) {
+          const d = msg.data as any;
+          if (d.payload) applyInit(d.payload);
+          if (d.currentChapterId)
+            dispatch({ type: "set-chapter", chapterId: d.currentChapterId });
+          if (typeof d.playing === "boolean")
+            dispatch({ type: d.playing ? "play" : "pause" });
+          if (typeof d.mic === "boolean")
+            dispatch({ type: "set-mic", active: d.mic });
+          if (typeof d.wordIndex === "number")
+            dispatch({ type: "set-word-index", index: d.wordIndex });
+
+          // If cached state is missing critical bits (doc/appearance), ask controller to re-send
+          const missingDoc = !d.payload || !d.payload.doc;
+          const missingAppearance = !d.payload || !d.payload.appearance;
+          if (missingDoc || missingAppearance) {
+            // immediate single request
+            try {
+              ws?.send(JSON.stringify({ type: "signal", room, data: { type: "request-state" } }));
+              console.log("[webrtc] requested missing state from controller (request-state)");
+            } catch (_) {
+              /* ignore */
+            }
+
+            // start a short retry loop that re-issues get-state + request-state
+            if (stateRetryTimerRef.current == null) {
+              stateRetryAttemptsRef.current = 0;
+              stateRetryTimerRef.current = window.setInterval(() => {
+                stateRetryAttemptsRef.current++;
+                try {
+                  if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: "get-state", room }));
+                    ws.send(JSON.stringify({ type: "signal", room, data: { type: "request-state" } }));
+                    console.log(`[webrtc] retrying get-state/request-state (attempt ${stateRetryAttemptsRef.current})`);
+                  }
+                } catch (_) {}
+
+                if (stateRetryAttemptsRef.current >= MAX_STATE_REQUEST_RETRIES) {
+                  if (stateRetryTimerRef.current) {
+                    window.clearInterval(stateRetryTimerRef.current);
+                    stateRetryTimerRef.current = null;
+                  }
+                }
+              }, 750);
+            }
+          } else {
+            // we have doc + appearance — stop retry loop (if running)
+            if (stateRetryTimerRef.current) {
+              window.clearInterval(stateRetryTimerRef.current);
+              stateRetryTimerRef.current = null;
+            }
+            stateRetryAttemptsRef.current = 0;
+          }
+
           return;
         }
 
@@ -812,6 +918,13 @@ function Presenter() {
     })();
 
     return () => {
+      // clear any pending state-retry timers
+      if (stateRetryTimerRef.current) {
+        window.clearInterval(stateRetryTimerRef.current);
+        stateRetryTimerRef.current = null;
+        stateRetryAttemptsRef.current = 0;
+      }
+
       ws?.close();
 
       pc?.close();
@@ -831,12 +944,7 @@ function Presenter() {
       if (!appearance.showOverlay || appearance.overlayShape !== "camera") {
         setCameraError(null);
 
-        const w = window.opener || window.parent;
-        if (w)
-          w.postMessage(
-            { type: "presenter-camera", active: false },
-            window.location.origin,
-          );
+        sendToController({ type: "presenter-camera", active: false });
 
         return;
       }
@@ -845,12 +953,7 @@ function Presenter() {
       if (!deviceId) {
         setCameraError(null);
 
-        const w = window.opener || window.parent;
-        if (w)
-          w.postMessage(
-            { type: "presenter-camera", active: false },
-            window.location.origin,
-          );
+        sendToController({ type: "presenter-camera", active: false });
 
         return;
       }
@@ -878,22 +981,12 @@ function Presenter() {
 
         setCameraError(null);
 
-        const w = window.opener || window.parent;
-        if (w)
-          w.postMessage(
-            { type: "presenter-camera", active: true },
-            window.location.origin,
-          );
+        sendToController({ type: "presenter-camera", active: true });
       } catch (err: any) {
         const msg = String(err?.message ?? err ?? "Camera error");
         setCameraError(msg);
 
-        const w = window.opener || window.parent;
-        if (w)
-          w.postMessage(
-            { type: "presenter-camera", active: false, error: msg },
-            window.location.origin,
-          );
+        sendToController({ type: "presenter-camera", active: false, error: msg });
       }
     }
 
@@ -1099,7 +1192,7 @@ function Presenter() {
       <button
         onClick={async () => {
           try {
-            const roomId = Math.random().toString(36).slice(2, 9);
+            const roomId = "smui-default";
 
             // Step 1: Create WebSocket and wait for connection
             const ws = new WebSocket(
@@ -1121,10 +1214,7 @@ function Presenter() {
 
             // Step 3: NOW send invite to phone (presenter is already waiting in room)
 
-            (window.opener || window.parent)?.postMessage(
-              { type: "presenter-share-invite", room: roomId },
-              window.location.origin,
-            );
+            sendToController({ type: "presenter-share-invite", room: roomId });
             console.log("[presenter] Sent invite to phone");
 
             // Step 4: Wait for phone to join (peer-joined message) — fallback after 1.5s

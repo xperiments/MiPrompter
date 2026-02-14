@@ -59,6 +59,51 @@ export function usePresenterSync({
     presenterDisplayedChapterRef,
     send,
   ]);
+
+  // Re-send current presenter state when a WS sender becomes available (smui.ws-ready)
+  useEffect(() => {
+    function onWsReady() {
+      const win = presenterWindowRef?.current ?? null;
+      const origin = window.location.origin;
+      const activeDoc = scripts.find((s) => s.id === activeScriptId) ?? null;
+
+      const msgLoad = { type: "presenter-load-doc", doc: activeDoc };
+      const msgParams = { type: "set-params", docId: activeScriptId };
+
+      if (send) {
+        send(msgLoad);
+        send(msgParams);
+        return;
+      }
+
+      if (activeScriptId && win && !win.closed) {
+        win.postMessage(msgLoad, origin);
+        win.postMessage(msgParams, origin);
+      }
+
+      sendToPresenterViaWs(msgLoad);
+      sendToPresenterViaWs(msgParams);
+    }
+
+    window.addEventListener("smui.ws-ready", onWsReady as EventListener);
+
+    // If a WS sender is already registered (race avoidance), trigger resync immediately
+    try {
+      // import guarded to avoid circular import at top-level — dynamic require-like access
+      // (we import from presenter-transport at top of file already) — use the exported helper
+      // `hasPresenterWsSender` to detect current registration state.
+      // If registered, call onWsReady() so presenters that joined earlier still receive state.
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { hasPresenterWsSender } = require("../lib/presenter-transport");
+      if (typeof hasPresenterWsSender === "function" && hasPresenterWsSender()) {
+        onWsReady();
+      }
+    } catch (_) {
+      /* ignore */
+    }
+
+    return () => window.removeEventListener("smui.ws-ready", onWsReady as EventListener);
+  }, [activeScriptId, scripts, presenterWindowRef, send]);
 }
 
 export function updatePresenterWindow(

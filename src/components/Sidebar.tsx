@@ -22,6 +22,7 @@ import {
   usePresenterSync,
   updatePresenterWindow,
 } from "../hooks/usePresenterSync";
+import { setPresenterWsSender } from "../lib/presenter-transport";
 
 /* extracted sidebar subcomponents */
 import ScriptsSection from "./sidebar/ScriptsSection";
@@ -519,13 +520,13 @@ export function Sidebar(props: SidebarProps) {
       />
 
       {/* Display Section (extracted) */}
-      <DisplaysSection
+      {/* <DisplaysSection
         screens={screens}
         activeScreenLabel={screens?.selectedScreenLabel}
         onSelectScreen={handleSelectScreen}
         onRefresh={screens?.refresh}
         presenterStatus={presenterStatus}
-      />
+      /> */}
 
       {/* Video Source / Pairing (new) */}
       <SidebarSection title="Cast" icon="movie">
@@ -537,6 +538,9 @@ export function Sidebar(props: SidebarProps) {
               onOpenTeleprompter={props.onOpenTeleprompter}
               screens={screens}
               on={props.on}
+              scripts={props.scripts}
+              activeScriptId={props.activeScriptId}
+              appearance={presenter}
             />
           </div>
         </div>
@@ -923,6 +927,9 @@ function PairedDeviceList({
   onOpenTeleprompter,
   screens,
   on,
+  scripts,
+  activeScriptId,
+  appearance,
 }: {
   presenterWindowRef?: React.MutableRefObject<Window | null>;
   onOpenTeleprompter?: () => void;
@@ -934,6 +941,9 @@ function PairedDeviceList({
       meta?: { origin: string; transport: "postMessage" | "ws" },
     ) => void,
   ) => () => void;
+  scripts?: ScriptDoc[];
+  activeScriptId?: string;
+  appearance?: Record<string, any>;
 }) {
   type Paired = {
     id: string;
@@ -948,6 +958,57 @@ function PairedDeviceList({
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
+  // Keep refs to latest scripts/activeScriptId so message handlers always use current values
+  const scriptsRef = useRef(scripts);
+  const activeScriptIdRef = useRef(activeScriptId);
+  const appearanceRef = useRef(appearance);
+
+  useEffect(() => {
+    scriptsRef.current = scripts;
+  }, [scripts]);
+
+  useEffect(() => {
+    activeScriptIdRef.current = activeScriptId;
+  }, [activeScriptId]);
+
+  useEffect(() => {
+    appearanceRef.current = appearance;
+  }, [appearance]);
+
+  // When activeScriptId changes, broadcast the updated doc + appearance to WS presenters
+  useEffect(() => {
+    console.log("[Sidebar] activeScriptId effect triggered, activeScriptId:", activeScriptId);
+    
+    const ws = wsRef.current;
+    console.log("[Sidebar] WebSocket state:", ws?.readyState, "(1=OPEN, 3=CLOSED)");
+    
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      console.log("[Sidebar] WebSocket not open, skipping broadcast");
+      return;
+    }
+
+    const DEFAULT_WS_ROOM = "smui-default";
+    const activeDoc = scriptsRef.current?.find((s) => s.id === activeScriptIdRef.current) ?? null;
+
+    console.log("[Sidebar] Broadcasting chapter change - activeDoc:", activeDoc?.title ?? "unknown", "docId:", activeScriptIdRef.current);
+
+    try {
+      ws.send(JSON.stringify({ type: "signal", room: DEFAULT_WS_ROOM, data: { type: "presenter-load-doc", doc: activeDoc } }));
+      ws.send(JSON.stringify({ type: "signal", room: DEFAULT_WS_ROOM, data: { type: "set-params", docId: activeScriptIdRef.current ?? null, appearance: appearanceRef.current } }));
+      
+      // Navigate to first chapter of the new doc
+      const firstChapterId = activeDoc?.chapters?.[0]?.id ?? null;
+      if (firstChapterId) {
+        console.log("[Sidebar] Navigating to first chapter:", firstChapterId);
+        ws.send(JSON.stringify({ type: "signal", room: DEFAULT_WS_ROOM, data: { type: "presenter-goto-chapter", chapterId: firstChapterId } }));
+      }
+      
+      console.log("[Sidebar] ✓ Broadcast chapter change to WS room");
+    } catch (err) {
+      console.error("[Sidebar] Error broadcasting chapter change:", err);
+    }
+  }, [activeScriptId]);
+
   const save = (next: Paired[]) => {
     // keep only the first entry in-memory (do NOT persist to localStorage)
     const normalized = next && next.length ? [next[0]] : [];
@@ -955,6 +1016,8 @@ function PairedDeviceList({
   };
 
   useEffect(() => {
+    const DEFAULT_WS_ROOM = "smui-default";
+
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${proto}//${location.host}/ws`;
     let ws: WebSocket | null = null;
@@ -971,10 +1034,69 @@ function PairedDeviceList({
 
     ws.addEventListener("open", () => {
       console.log("[Sidebar] WebSocket opened, state:", ws.readyState);
+
+      // join a default dev room so presenters opened manually with ?transport=ws
+      // can communicate without an explicit room id.
+      try {
+        ws.send(JSON.stringify({ type: "join", room: DEFAULT_WS_ROOM }));
+        console.log("[Sidebar] joined default WS room:", DEFAULT_WS_ROOM);
+      } catch (err) {
+        /* ignore */
+      }
+
+      // register a default WS sender bound to the default room so
+      // usePresenterBridge.send() works when the controller hasn't created
+      // a dedicated per-pair room.
+      try {
+        setPresenterWsSender((msg) => {
+          try {
+            const s = wsRef.current;
+            if (!s || s.readyState !== WebSocket.OPEN) return false;
+            s.send(JSON.stringify({ type: "signal", room: DEFAULT_WS_ROOM, data: msg }));
+            return true;
+          } catch (err) {
+            return false;
+          }
+        });
+
+        // Initial seed: send current doc + appearance on first open
+        console.log("[Sidebar] Sending initial doc + appearance on ws.open");
+        const activeDoc = scriptsRef.current?.find((s) => s.id === activeScriptIdRef.current) ?? null;
+        ws.send(JSON.stringify({ type: "signal", room: DEFAULT_WS_ROOM, data: { type: "presenter-load-doc", doc: activeDoc } }));
+        ws.send(JSON.stringify({ type: "signal", room: DEFAULT_WS_ROOM, data: { type: "set-params", docId: activeScriptIdRef.current ?? null, appearance: appearanceRef.current } }));
+        
+        // Navigate to first chapter
+        const firstChapterId = activeDoc?.chapters?.[0]?.id ?? null;
+        if (firstChapterId) {
+          ws.send(JSON.stringify({ type: "signal", room: DEFAULT_WS_ROOM, data: { type: "presenter-goto-chapter", chapterId: firstChapterId } }));
+        }
+
+        // notify app that WS sender is available so it can re-send state
+        window.dispatchEvent(new CustomEvent("smui.ws-ready"));
+      } catch (_) {
+        /* ignore */
+      }
     });
 
     ws.addEventListener("message", (ev) => {
-      const msg = JSON.parse(ev.data);
+      let msg: any = null;
+      try {
+        msg = JSON.parse(ev.data);
+      } catch (err) {
+        return;
+      }
+
+      // Forward signals from the remote presenter to the local window
+      // so the bridge hook can update state (docId, wordIndex, etc.)
+      if (msg?.type === "signal" && msg.data) {
+        window.dispatchEvent(
+          new MessageEvent("message", {
+            data: msg.data,
+            origin: window.location.origin,
+          }),
+        );
+      }
+
       if (msg?.type === "pair-request" && msg.id) {
         const id = String(msg.id);
         const info = msg.info || {};
@@ -996,6 +1118,27 @@ function PairedDeviceList({
         // send pair-ack so the phone knows it's paired
 
         ws.send(JSON.stringify({ type: "pair-ack", id }));
+        return;
+      }
+
+      // respond to presenter 'request-state' signals by re-sending doc + params
+      if (msg?.type === "signal" && msg.data?.type === "request-state") {
+        try {
+          const activeDoc = scriptsRef.current?.find((s) => s.id === activeScriptIdRef.current) ?? null;
+          // send presenter-load-doc + set-params into the room so presenter can apply
+          ws.send(JSON.stringify({ type: "signal", room: msg.room || "smui-default", data: { type: "presenter-load-doc", doc: activeDoc } }));
+          ws.send(JSON.stringify({ type: "signal", room: msg.room || "smui-default", data: { type: "set-params", docId: activeScriptIdRef.current ?? null, appearance: appearanceRef.current } }));
+          
+          // Navigate to first chapter
+          const firstChapterId = activeDoc?.chapters?.[0]?.id ?? null;
+          if (firstChapterId) {
+            ws.send(JSON.stringify({ type: "signal", room: msg.room || "smui-default", data: { type: "presenter-goto-chapter", chapterId: firstChapterId } }));
+          }
+          
+          console.log("[Sidebar] responded to request-state with doc + params");
+        } catch (err) {
+          /* ignore */
+        }
       }
     });
 
@@ -1007,6 +1150,7 @@ function PairedDeviceList({
       // Only nullify if this is still the current WebSocket (avoid race with StrictMode remounting)
       if (ws === wsRef.current) {
         wsRef.current = null;
+        setPresenterWsSender(null);
       }
     });
 
@@ -1025,6 +1169,7 @@ function PairedDeviceList({
       }
 
       wsRef.current = null;
+      setPresenterWsSender(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1136,9 +1281,10 @@ function PairedDeviceList({
       }, 200);
     }
 
-    // create a temporary room id for the WebRTC session and notify the paired device
-    const roomId = Math.random().toString(36).slice(2, 8);
-    const presenterUrl = `${location.origin}/presenter.html#${roomId}`;
+    // use shared/default room for WS (unified-room mode)
+    const roomId = "smui-default";
+    // open presenter in WS mode so controller <-> presenter communicate over signaling
+    const presenterUrl = `${location.origin}/app.html?transport=ws#${roomId}`;
 
     // notify paired phone to open the presenter URL (targeted by id)
     try {
@@ -1202,6 +1348,24 @@ function PairedDeviceList({
     // listen for signaling messages for this room
     const onWsMessage = (ev: MessageEvent) => {
       const msg = JSON.parse(ev.data);
+
+      // Control signals from presenter/controller -> forward into app runtime
+      if (msg?.type === "signal" && msg.data) {
+        // forward the embedded payload (e.g. presenter-play / presenter-load-doc)
+        window.postMessage(msg.data, window.location.origin);
+        return;
+      }
+
+      // Cached room state (seed late joiners)
+      if (msg?.type === "state" && msg.data) {
+        const d = msg.data as any;
+        if (d.payload) window.postMessage({ type: "presenter-init", ...d.payload }, window.location.origin);
+        if (typeof d.playing === "boolean") window.postMessage({ type: "presenter-playing", playing: d.playing }, window.location.origin);
+        if (typeof d.mic === "boolean") window.postMessage({ type: "presenter-mic", active: d.mic }, window.location.origin);
+        if (typeof d.wordIndex === "number") window.postMessage({ type: "presenter-word-index", index: d.wordIndex }, window.location.origin);
+        return;
+      }
+
       // answer
       if (msg?.type === "answer") {
         const desc = {
@@ -1222,10 +1386,41 @@ function PairedDeviceList({
 
     ws?.addEventListener("message", onWsMessage);
 
+    // register a WS sender so usePresenterBridge.send() can forward messages to presenter
+    setPresenterWsSender((msg) => {
+      try {
+        const s = wsRef.current;
+        if (!s || s.readyState !== WebSocket.OPEN) return false;
+        s.send(JSON.stringify({ type: "signal", room: roomId, data: msg }));
+        return true;
+      } catch (err) {
+        return false;
+      }
+    });
+
+    // seed the newly-joined room's presenter with the current doc + appearance
+    try {
+      const activeDoc = scriptsRef.current?.find((s) => s.id === activeScriptIdRef.current) ?? null;
+      wsRef.current?.send(JSON.stringify({ type: "signal", room: roomId, data: { type: "presenter-load-doc", doc: activeDoc } }));
+      wsRef.current?.send(JSON.stringify({ type: "signal", room: roomId, data: { type: "set-params", docId: activeScriptIdRef.current ?? null, appearance: appearanceRef.current } }));
+      
+      // Navigate to first chapter
+      const firstChapterId = activeDoc?.chapters?.[0]?.id ?? null;
+      if (firstChapterId) {
+        wsRef.current?.send(JSON.stringify({ type: "signal", room: roomId, data: { type: "presenter-goto-chapter", chapterId: firstChapterId } }));
+      }
+    } catch (err) {
+      /* ignore */
+    }
+
+    // notify app that a per-room WS sender is available
+    window.dispatchEvent(new CustomEvent("smui.ws-ready", { detail: { room: roomId } }));
+
     // cleanup: remove listeners when the presenter window/tab closes
     const cleanup = () => {
       ws?.removeEventListener("message", onWsMessage);
       pc.close();
+      setPresenterWsSender(null);
     };
     window.addEventListener("beforeunload", cleanup, { once: true });
 

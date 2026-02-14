@@ -138,11 +138,9 @@ export function usePresenterBridge() {
 
   const send = useCallback(
     (msg: PresenterMessage) => {
-      const ok = postToPresenter(msg);
-      if (ok) return true;
-
-        return Boolean(sendToPresenterViaWs && sendToPresenterViaWs(msg));
-
+      const okPost = postToPresenter(msg);
+      const okWs = Boolean(sendToPresenterViaWs && sendToPresenterViaWs(msg));
+      return okPost || okWs;
     },
     [postToPresenter],
   );
