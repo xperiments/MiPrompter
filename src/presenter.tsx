@@ -595,7 +595,7 @@ function Presenter() {
           break;
         }
         case "presenter-playing":
-          if (Boolean(raw.playing)) dispatch({ type: "play" });
+          if (raw.playing) dispatch({ type: "play" });
           else dispatch({ type: "pause" });
           break;
         case "presenter-mic":

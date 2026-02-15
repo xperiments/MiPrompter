@@ -1,10 +1,4 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useMemo } from "react";
 import QRCode from "qrcode";
 
 import type { ScriptDoc, AppearanceSettings, PresenterAppearance } from "../types";
@@ -25,73 +19,14 @@ import {
 } from "../hooks/usePresenterSync";
 import { APPEARANCE_STORAGE_KEY, SCRIPTS_STORAGE_KEY, VOICE_COMMANDS_KEY, EVT_OPEN_SIDEBAR_SECTION } from "../lib/keys";
 
-// language options shared between components (hoisted for perf)
-const LANG_OPTIONS = [
-  { value: "en-US", label: "English (US)" },
-  { value: "en-GB", label: "English (UK)" },
-  { value: "en-AU", label: "English (Australia)" },
-  { value: "en-CA", label: "English (Canada)" },
-  { value: "en-IN", label: "English (India)" },
-  { value: "en-NZ", label: "English (New Zealand)" },
-  { value: "en-IE", label: "English (Ireland)" },
-  { value: "en-SG", label: "English (Singapore)" },
-  { value: "en-ZA", label: "English (South Africa)" },
-  { value: "en-PH", label: "English (Philippines)" },
-
-  { value: "es-ES", label: "Español (España)" },
-  { value: "es-MX", label: "Español (México)" },
-  { value: "es-AR", label: "Español (Argentina)" },
-  { value: "es-CO", label: "Español (Colombia)" },
-  { value: "es-PE", label: "Español (Perú)" },
-  { value: "es-VE", label: "Español (Venezuela)" },
-  { value: "es-CL", label: "Español (Chile)" },
-  { value: "es-US", label: "Español (USA)" },
-  { value: "es-EC", label: "Español (Ecuador)" },
-  { value: "es-BO", label: "Español (Bolivia)" },
-  { value: "es-DO", label: "Español (Rep. Dominicana)" },
-  { value: "es-GT", label: "Español (Guatemala)" },
-  { value: "es-HN", label: "Español (Honduras)" },
-  { value: "es-NI", label: "Español (Nicaragua)" },
-  { value: "es-PA", label: "Español (Panamá)" },
-  { value: "es-PR", label: "Español (Puerto Rico)" },
-  { value: "es-PY", label: "Español (Paraguay)" },
-  { value: "es-SV", label: "Español (El Salvador)" },
-  { value: "es-UY", label: "Español (Uruguay)" },
-  { value: "es-CR", label: "Español (Costa Rica)" },
-
-  { value: "zh-CN", label: "中文 (简体)" },
-  { value: "zh-TW", label: "中文 (繁體)" },
-  { value: "hi-IN", label: "हिन्दी (India)" },
-  { value: "fr-FR", label: "Français (France)" },
-  { value: "fr-CA", label: "Français (Canada)" },
-  { value: "fr-BE", label: "Français (Belgique)" },
-  { value: "fr-CH", label: "Français (Suisse)" },
-  { value: "fr-LU", label: "Français (Luxembourg)" },
-  { value: "pt-BR", label: "Português (Brasil)" },
-  { value: "pt-PT", label: "Português (Portugal)" },
-  { value: "pt-AO", label: "Português (Angola)" },
-  { value: "pt-MZ", label: "Português (Moçambique)" },
-  { value: "de-DE", label: "Deutsch (Deutschland)" },
-  { value: "de-AT", label: "Deutsch (Österreich)" },
-  { value: "de-CH", label: "Deutsch (Schweiz)" },
-  { value: "de-LU", label: "Deutsch (Luxemburg)" },
-  { value: "de-LI", label: "Deutsch (Liechtenstein)" },
-  { value: "ja-JP", label: "日本語 (日本)" },
-  { value: "ko-KR", label: "한국어 (대한민국)" },
-  { value: "it-IT", label: "Italiano (Italia)" },
-  { value: "it-CH", label: "Italiano (Svizzera)" },
-  { value: "ru-RU", label: "Русский (Россия)" },
-  { value: "vi-VN", label: "Tiếng Việt (Việt Nam)" },
-  { value: "tr-TR", label: "Türkçe (Türkiye)" },
-  { value: "id-ID", label: "Bahasa Indonesia" },
-  { value: "pl-PL", label: "Polski (Polska)" },
-  { value: "th-TH", label: "ไทย (ประเทศไทย)" },
-];
+import { LANG_OPTIONS } from "../lib/lang-options";
 
 /* extracted sidebar subcomponents */
 import ScriptsSection from "./sidebar/ScriptsSection";
 import DisplaysSection from "./sidebar/DisplaysSection";
 import AppearanceSection from "./sidebar/AppearanceSection";
+import VoiceCommandsSection from "./sidebar/VoiceCommandsSection";
+import Row from "./sidebar/Row";
 
 export interface SidebarProps {
   scripts: ScriptDoc[];
@@ -158,57 +93,6 @@ export function Sidebar(props: SidebarProps) {
   // UI hint from presenter (transient)
   const presenterStatus = React.useState<string | null>(null)[0];
 
-  // on-device language install UI
-  const [installingLang, setInstallingLang] = React.useState(false);
-  const [onDeviceStatus, setOnDeviceStatus] = React.useState<string | null>(
-    null,
-  );
-
-  const handleInstallLang = React.useCallback(async () => {
-    const lang = props.speechLanguage ?? "en-US";
-    if (!props.checkSpeechOnDevice) {
-      setOnDeviceStatus("unsupported");
-      return;
-    }
-
-    setOnDeviceStatus("checking");
-    try {
-      const status = await props.checkSpeechOnDevice(lang);
-      if (status === "available") {
-        setOnDeviceStatus("available");
-        setLangStatuses((s) => ({ ...(s || {}), [lang]: "available" }));
-        return;
-      }
-      if (status === "unavailable") {
-        setOnDeviceStatus("unavailable");
-        setLangStatuses((s) => ({ ...(s || {}), [lang]: "unavailable" }));
-        return;
-      }
-
-      // otherwise attempt install (if API present)
-      if (!props.installSpeechOnDevice) {
-        setOnDeviceStatus("no-install-api");
-        return;
-      }
-
-      setInstallingLang(true);
-      setOnDeviceStatus("installing");
-      const ok = await props.installSpeechOnDevice(lang);
-      setInstallingLang(false);
-      setOnDeviceStatus(ok ? "installed" : "install-failed");
-      setLangStatuses((s) => ({
-        ...(s || {}),
-        [lang]: ok ? "installed" : "install-failed",
-      }));
-    } catch (err) {
-      setInstallingLang(false);
-      setOnDeviceStatus("error");
-    }
-  }, [
-    props.checkSpeechOnDevice,
-    props.installSpeechOnDevice,
-    props.speechLanguage,
-  ]);
 
   // Allow other UI to request a sidebar section to open (used when selecting devices)
   const openSidebarSection = (title: string) => {
@@ -364,56 +248,7 @@ const presenter = useMemo((): Partial<PresenterAppearance> => {
 
   // language options shared between the Select and the status list (hoisted)
 
-  const [langStatuses, setLangStatuses] = React.useState<
-    Record<string, string>
-  >({});
 
-  // options prefixed with online/offline icons (📵 = offline, ☁️ = online)
-  const LANG_OPTIONS_WITH_ICONS = React.useMemo(() => {
-    return LANG_OPTIONS.map((opt) => {
-      const s = langStatuses[opt.value];
-      const offline = s === "available" || s === "installed";
-      const icon = offline ? "📵" : "☁️";
-      return { ...opt, label: `${icon} ${opt.label}` };
-    });
-  }, [langStatuses]);
-
-  // helper for the currently selected language
-  const selectedLang = props.speechLanguage ?? "es-ES";
-  const selectedLangStatus = langStatuses[selectedLang];
-  const selectedLangIsInstalled =
-    selectedLangStatus === "available" || selectedLangStatus === "installed";
-
-  // reset on-device status when the user picks a different language
-  React.useEffect(() => {
-    setOnDeviceStatus(null);
-  }, [selectedLang]);
-
-  // populate per-language on-device availability (calls checkSpeechOnDevice in parallel)
-  React.useEffect(() => {
-    let mounted = true;
-    const checkAll = async () => {
-      if (!props.checkSpeechOnDevice) return;
-      const entries = await Promise.all(
-        LANG_OPTIONS.map(async (opt) => {
-          try {
-            const s = await props.checkSpeechOnDevice!(opt.value);
-            return [opt.value, String(s)] as const;
-          } catch (_) {
-            return [opt.value, "error"] as const;
-          }
-        }),
-      );
-      if (!mounted) return;
-      const next: Record<string, string> = {};
-      for (const [k, v] of entries) next[k] = v as string;
-      setLangStatuses(next);
-    };
-    checkAll();
-    return () => {
-      mounted = false;
-    };
-  }, [props.checkSpeechOnDevice]);
 
   // Export scripts handler
   const handleExportScripts = useCallback(async () => {
@@ -516,147 +351,17 @@ const presenter = useMemo((): Partial<PresenterAppearance> => {
         presenterWindowRef={props.presenterWindowRef}
       />
 
-      {/* Voice Commands (new) */}
-      <SidebarSection title="Speech" icon="microphone">
-        <div className="space-y-3 px-1">
-          <div className="text-xs text-white/55 mb-2">Microphones</div>
-
-          <div className="flex items-center gap-2">
-            <div
-              className="flex-1"
-              onMouseDown={() => {
-                if (mics?.permission === "prompt") mics.requestPermission();
-              }}
-            >
-              {mics ? (
-                <MicrophoneSelect
-                  mics={mics.mics}
-                  selected={mics.selectedMicId}
-                  onChange={mics.setSelectedMicId}
-                  loading={mics.loading}
-                  error={mics.error}
-                  onRefresh={mics.refresh}
-                />
-              ) : (
-                <ScriptList
-                  items={[{ id: "", label: "Microphones unavailable" }]}
-                  activeId={""}
-                  onSelect={() => {}}
-                />
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <div className="text-xs text-white/40">
-              Permission:{" "}
-              <strong
-                style={{
-                  color:
-                    mics.permission === "granted"
-                      ? "#34d399"
-                      : mics.permission === "denied"
-                        ? "#ef4444"
-                        : "#9ca3af",
-                }}
-              >
-                {mics.permission}
-              </strong>
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-3 px-1 mt-8">
-          <ToggleRow
-            label="Voice Commands"
-            description='Say "prompter restart" to reset'
-            checked={presenter.voiceCommands ?? false}
-            onChange={handleToggle("voiceCommands")}
-          />
-          <Row label="Language">
-            {/* language options reused below for status checks */}
-            {/**/}
-            <div className="flex items-center gap-3">
-              <div style={{ flex: 1 }}>
-                <Select
-                  value={props.speechLanguage ?? "es-ES"}
-                  onChange={(v) => props.onSpeechLanguageChange?.(v)}
-                  options={LANG_OPTIONS_WITH_ICONS}
-                />
-              </div>
-            </div>
-          </Row>
-
-          {!selectedLangIsInstalled && (
-            <>
-              <Row label="">
-                <div className="flex items-center gap-2">
-                  <button
-                    className="text-sm bg-white/5 border border-white/10 rounded-md px-2 py-1"
-                    onClick={handleInstallLang}
-                    disabled={!props.checkSpeechOnDevice || installingLang}
-                    title={
-                      !props.checkSpeechOnDevice
-                        ? "Not supported by this browser"
-                        : "Check/install on-device language pack"
-                    }
-                  >
-                    {installingLang ? "Installing…" : "Install Offline Pack"}
-                  </button>
-
-                  <div className="text-xs text-white/50">
-                    {onDeviceStatus === "checking" && "Checking…"}
-                    {onDeviceStatus === "available" && "Ready"}
-                    {onDeviceStatus === "installed" && "Installed"}
-                    {onDeviceStatus === "installing" && "Installing…"}
-                    {onDeviceStatus === "install-failed" && "Failed"}
-                    {onDeviceStatus === "unavailable" && "Unavailable"}
-                    {onDeviceStatus === "unsupported" && "Unsupported"}
-                    {onDeviceStatus === "no-install-api" && "No API"}
-                    {onDeviceStatus === "error" && "Error"}
-                  </div>
-                </div>
-              </Row>
-            </>
-          )}
-          <Row label="Prompter name">
-            <input
-              className="w-full bg-white/5 border border-white/10 rounded-md px-2 py-1 text-sm text-white/80"
-              value={props.voiceCommands?.wakeWord ?? ""}
-              onChange={(e) =>
-                handleVoiceCommandsChange({ wakeWord: e.target.value })
-              }
-              placeholder="e.g. Siri"
-            />
-          </Row>
-
-          <Row label="Retry (current chapter)">
-            <input
-              className="w-full bg-white/5 border border-white/10 rounded-md px-2 py-1 text-sm text-white/80"
-              value={props.voiceCommands?.retry ?? "retry"}
-              onChange={(e) =>
-                handleVoiceCommandsChange({ retry: e.target.value })
-              }
-            />
-          </Row>
-
-          <Row label="Restart (document)">
-            <input
-              className="w-full bg-white/5 border border-white/10 rounded-md px-2 py-1 text-sm text-white/80"
-              value={props.voiceCommands?.restart ?? "restart"}
-              onChange={(e) =>
-                handleVoiceCommandsChange({ restart: e.target.value })
-              }
-            />
-          </Row>
-
-          <div className="text-xs text-white/40">
-            Say the configured phrase prefixed by the{" "}
-            <strong>Prompter name</strong> (e.g. <code>Siri Retry</code> or{" "}
-            <code>Siri Restart</code>).
-          </div>
-        </div>
-      </SidebarSection>
+      <VoiceCommandsSection
+        presenter={presenter}
+        handleToggle={handleToggle}
+        voiceCommands={props.voiceCommands}
+        setVoiceCommands={props.setVoiceCommands}
+        speechLanguage={props.speechLanguage}
+        onSpeechLanguageChange={props.onSpeechLanguageChange}
+        checkSpeechOnDevice={props.checkSpeechOnDevice}
+        installSpeechOnDevice={props.installSpeechOnDevice}
+        send={props.send}
+      />
 
       {/* Overlays (new) */}
       <SidebarSection title="Overlays" icon="layers">
@@ -849,15 +554,6 @@ const presenter = useMemo((): Partial<PresenterAppearance> => {
   );
 }
 
-// Helper components
-function Row(props: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="grid grid-cols-[100px_1fr] items-center gap-3">
-      <div className="text-xs text-white/55">{props.label}</div>
-      <div>{props.children}</div>
-    </div>
-  );
-}
 
 // Simple, reliable position preview — click or drag anywhere in the box to set position.
 function PositionPreview(props: {
@@ -1066,48 +762,5 @@ function PositionPreview(props: {
         {shapeEl(38)}
       </div>
     </div>
-  );
-}
-
-function MicrophoneSelect(props: {
-  mics: Array<{ deviceId: string; label: string }>;
-  selected: string | null;
-  onChange: (deviceId: string) => void;
-  loading: boolean;
-  error: string | null;
-  onRefresh?: () => void;
-}) {
-  const { mics, selected, loading, error, onRefresh } = props;
-
-  const items = useMemo(() => {
-    if (mics.length)
-      return mics.map((m) => ({
-        id: m.deviceId,
-        label: m.label.replace(/\s*\([^)]*\)$/, ""),
-      }));
-    if (selected)
-      return [{ id: selected, label: `Selected — ${selected.slice(0, 6)}` }];
-    return [
-      {
-        id: "",
-        label: loading ? "Detecting…" : (error ?? "No microphones found"),
-      },
-    ];
-  }, [mics, selected, loading, error]);
-
-  return (
-    <ScriptList
-      items={items}
-      activeId={selected ?? ""}
-      onSelect={(id) => {
-        props.onChange(id);
-        window.dispatchEvent(
-          new CustomEvent(EVT_OPEN_SIDEBAR_SECTION, {
-            detail: { title: "Display Options" },
-          }),
-        );
-      }}
-      onRefresh={onRefresh}
-    />
   );
 }
