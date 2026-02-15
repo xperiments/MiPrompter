@@ -20,6 +20,7 @@ import {
 import { APPEARANCE_STORAGE_KEY, SCRIPTS_STORAGE_KEY, VOICE_COMMANDS_KEY, EVT_OPEN_SIDEBAR_SECTION } from "../lib/keys";
 
 import { LANG_OPTIONS } from "../lib/lang-options";
+import { warn, error } from "../lib/logger";
 
 /* extracted sidebar subcomponents */
 import ScriptsSection from "./sidebar/ScriptsSection";
@@ -220,7 +221,7 @@ const presenter = useMemo((): Partial<PresenterAppearance> => {
           }, 500);
         }
       } catch (err) {
-        console.warn("[Sidebar] handleSelectScreen failed", err);
+        warn("[Sidebar] handleSelectScreen failed", err);
       }
     },
     [
@@ -264,7 +265,7 @@ const presenter = useMemo((): Partial<PresenterAppearance> => {
       a.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      console.error(err);
+      error(err);
       alert("Failed to export scripts");
     }
   }, [ls]);

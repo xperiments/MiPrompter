@@ -1,5 +1,6 @@
 import { useRef, useEffect } from "react";
 import { ScriptDoc } from "../types";
+import { error } from "../lib/logger";
 
 /* Minimal SpeechRecognition-like typings used by the app — avoids `any` casts. */
 type SpeechRecognitionAlternative = { transcript: string; confidence?: number };
@@ -142,7 +143,7 @@ export function useAppSpeechControl(
       onDeviceStatusRef.current[lang] = status;
       return String(status);
     } catch (err) {
-      console.error("[SpeechControl] available() failed", err);
+      error("[SpeechControl] available() failed", err);
       onDeviceStatusRef.current[lang] = "error";
       return "error";
     }
@@ -157,7 +158,7 @@ export function useAppSpeechControl(
       if (ok) onDeviceStatusRef.current[lang] = "available";
       return Boolean(ok);
     } catch (err) {
-      console.error("[SpeechControl] install() failed", err);
+      error("[SpeechControl] install() failed", err);
       onDeviceStatusRef.current[lang] = "install-failed";
       return false;
     }
@@ -254,7 +255,7 @@ export function useAppSpeechControl(
     else recognition.processLocally = true; // still set — platform may still prefer local if possible
 
     recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
-      console.error("[SpeechControl] Error:", event?.error);
+      error("[SpeechControl] Error:", event?.error);
     };
 
     recognition.onresult = (event: SpeechRecognitionEventLike) => {

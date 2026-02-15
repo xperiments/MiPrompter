@@ -4,6 +4,7 @@ import type { CameraInfo } from "../../hooks/useCameraDetection";
 import type { ScreenInfo } from "../../lib/presenter";
 import Icon from "../ui/Icon";
 import { getCameraStream } from "../../lib/media-devices";
+import { error } from "../../lib/logger";
 
 export type VideoSource = {
   id: string;
@@ -95,7 +96,7 @@ export default function VideoSourceCard({
 
         cleanupRef.current = cleanupPreview;
       } catch (err: unknown) {
-        console.error("Composer: initPreview error", err);
+        error("Composer: initPreview error", err);
         setHasPreview(false);
         const msg = typeof err === "string" ? err : err instanceof Error ? err.message : String(err);
         setPreviewError(msg);

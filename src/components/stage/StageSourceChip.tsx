@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import Icon from "../ui/Icon";
 import { usePresenterBridge } from "../../hooks/usePresenterBridge";
 import { getCameraStream } from "../../lib/media-devices";
+import { error } from "../../lib/logger";
 
 export type StagePlacedSource = {
   sourceId: string;
@@ -92,7 +93,7 @@ export default function StageSourceChip({
             clearTimeout(fallback);
           };
         } catch (err: unknown) {
-          console.error("Composer: attachStream error", err);
+          error("Composer: attachStream error", err);
           setHasStream(false);
           const msg =
             typeof err === "string"
@@ -150,7 +151,7 @@ export default function StageSourceChip({
             clearTimeout(fallback);
           };
         } catch (err) {
-          console.error("Composer: attach local screen stream failed", err);
+          error("Composer: attach local screen stream failed", err);
           setHasStream(false);
           setStreamError(String(err));
         }

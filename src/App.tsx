@@ -13,6 +13,7 @@ import { useLocalStorageState } from "./hooks/useLocalStorageState";
 import { useLocalStorage } from "./hooks/useLocalStorage";
 import { useInitialPermissionsGate } from "./hooks/useInitialPermissionsGate";
 import { usePresenterBridge } from "./hooks/usePresenterBridge";
+import { warn } from "./lib/logger";
 import { useUiStore, DEFAULT_APPEARANCE, type UiStore } from "./stores/ui";
 import PairedDeviceList from "./components/sidebar/PairedDeviceList";
 import { useScreenDetection } from "./hooks/useScreenDetection";
@@ -1059,9 +1060,7 @@ export default function App() {
                 }
                 if (Date.now() - start > timeout) {
                   // give up; optional: surface a small notice
-                  console.warn(
-                    "Presenter did not open in time to jump to chapter",
-                  );
+                  warn("Presenter did not open in time to jump to chapter");
                   return;
                 }
                 setTimeout(poll, interval);

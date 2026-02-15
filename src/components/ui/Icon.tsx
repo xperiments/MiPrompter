@@ -1,4 +1,5 @@
 import React from "react";
+import { warn } from "../../lib/logger";
 
 // Load raw SVG source from `src/icons` and inline it so CSS (currentColor) can style fills/strokes.
 // Use Vite's import.meta.glob to eagerly load the files as raw strings.
@@ -83,7 +84,7 @@ export const Icon = React.memo(function Icon({ name, size, width, height, title,
   }
 
   // fallback: placeholder box
-  if (import.meta.env.DEV) console.warn(`Icon: unknown icon name "${name}" — rendering fallback.`);
+  if (import.meta.env.DEV) warn(`Icon: unknown icon name "${name}" — rendering fallback.`);
   const fbSize = size ?? width ?? height ?? "100%";
   return (
     <svg
