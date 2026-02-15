@@ -90,7 +90,7 @@ type Token = {
   index: number;
 };
 
-function parseScriptToTokens(
+export function parseScriptToTokens(
   doc: ScriptDocShape | null,
   preserveFormatting: boolean,
 ): Token[] {
