@@ -48,3 +48,29 @@ export type AppearanceSettings = {
   editor?: Partial<EditorAppearance>;
   presenter?: Partial<PresenterAppearance>;
 };
+
+// Presenter transport messages (shared app <-> presenter + WS)
+// Centralized here so other modules can import the canonical message shapes.
+export type PresenterMessage =
+  | { type: "play" }
+  | { type: "pause" }
+  | { type: "presenter-goto-chapter"; chapterId: string }
+  | { type: "set-word-index"; index: number }
+  | {
+      type: "set-params";
+      docId?: string | null;
+      micDeviceId?: string | null;
+      appearance?: Partial<PresenterAppearance>;
+    }
+  | { type: "presenter-load-doc"; doc: ScriptDoc | null }
+  | { type: "presenter-init"; docId?: string | null; doc?: ScriptDoc | null; appearance?: Partial<PresenterAppearance> }
+  | { type: "update-chapter"; chapterId: string; text: string }
+  | { type: "presenter-voice-commands"; config: unknown | null }
+  | { type: "prompter-reset" }
+  | { type: "presenter-ready" }
+  | { type: "presenter-playing"; playing: boolean }
+  | { type: "presenter-mic"; active: boolean }
+  | { type: "presenter-word-index"; index: number }
+  | { type: "presenter-chapter-loaded"; docId?: string | null; chapterId?: string | null }
+  | ({ type: string } & Record<string, unknown>);
+

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import type { ScriptDoc, PresenterAppearance } from "../types";
-import { sendToPresenterViaWs, type PresenterMessage } from "../lib/presenter-transport";
+import { sendToPresenterViaWs } from "../lib/presenter-transport";
+import type { PresenterMessage } from "../types";
 import { EVT_WS_READY } from "../lib/keys";
 
 export interface UsePresenterSyncParams {

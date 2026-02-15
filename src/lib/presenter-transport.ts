@@ -1,30 +1,42 @@
-import type { ScriptDoc, PresenterAppearance } from "../types";
+import type { ScriptDoc, PresenterAppearance, PresenterMessage } from "../types";
 
-// Discriminated union of the most-common presenter messages used across the app
-export type PresenterMessage =
-  | { type: "play" }
-  | { type: "pause" }
-  | { type: "presenter-goto-chapter"; chapterId: string }
-  | { type: "set-word-index"; index: number }
-  | {
-      type: "set-params";
-      docId?: string | null;
-      micDeviceId?: string | null;
-      appearance?: Partial<PresenterAppearance>;
-    }
-  | { type: "presenter-load-doc"; doc: ScriptDoc | null }
-  | { type: "presenter-init"; docId?: string | null; doc?: ScriptDoc | null; appearance?: Partial<PresenterAppearance> }
-  | { type: "update-chapter"; chapterId: string; text: string }
-  | { type: "presenter-voice-commands"; config: unknown | null }
-  | { type: "prompter-reset" }
-  // messages emitted by presenter -> controller (kept here for handler typing)
-  | { type: "presenter-ready" }
-  | { type: "presenter-playing"; playing: boolean }
-  | { type: "presenter-mic"; active: boolean }
-  | { type: "presenter-word-index"; index: number }
-  | { type: "presenter-chapter-loaded"; docId?: string | null; chapterId?: string | null }
-  // fallback for messages not yet enumerated
-  | ({ type: string } & Record<string, unknown>);
+/**
+ * Runtime type-guard for PresenterMessage. This is intentionally conservative
+ * (checks `type` and required primitive fields) and used by tests and any
+ * future runtime validation without changing existing behavior.
+ */
+export function isPresenterMessage(v: unknown): v is PresenterMessage {
+  if (!v || typeof v !== "object") return false;
+  const t = (v as any).type;
+  if (typeof t !== "string") return false;
+
+  switch (t) {
+    case "play":
+    case "pause":
+    case "presenter-ready":
+    case "prompter-reset":
+      return true;
+    case "presenter-playing":
+      return typeof (v as any).playing === "boolean";
+    case "presenter-mic":
+      return typeof (v as any).active === "boolean";
+    case "set-word-index":
+    case "presenter-word-index":
+      return typeof (v as any).index === "number";
+    case "presenter-goto-chapter":
+      return typeof (v as any).chapterId === "string";
+    case "set-params":
+      return (
+        (v as any).docId === undefined || typeof (v as any).docId === "string" || (v as any).docId === null
+      );
+    case "presenter-load-doc":
+    case "presenter-init":
+      return true; // `doc` can be any ScriptDoc|null — keep permissive
+    default:
+      // unknown message types are allowed (legacy/extension points)
+      return true;
+  }
+}
 
 export type PresenterSender = (msg: PresenterMessage) => boolean;
 

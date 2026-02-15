@@ -3,7 +3,8 @@ import { useEffect, useRef, useState, useCallback } from "react";import type { S
   type ScreenInfo,
   type Appearance as PresenterAppearance,
 } from "../lib/presenter";
-import { sendToPresenterViaWs, type PresenterMessage } from "../lib/presenter-transport";
+import { sendToPresenterViaWs } from "../lib/presenter-transport";
+import type { PresenterMessage } from "../types";
 
 type PresenterState = {
   playing: boolean;
