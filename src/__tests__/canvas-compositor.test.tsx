@@ -3,11 +3,15 @@ import { render, waitFor, cleanup } from '@testing-library/react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { useCanvasCompositor } from '../hooks/useCanvasCompositor';
 
-function TestHarness({ layers }: { layers: any[] }) {
+function TestHarness({ layers, initialVideos }: { layers: any[]; initialVideos?: Map<string, HTMLVideoElement> }) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const layersRef = React.useRef<any[]>(layers);
   const sourceVideoElsRef = React.useRef<Map<string, HTMLVideoElement>>(new Map());
   const sourceStreamsRef = React.useRef<Map<string, MediaStream>>(new Map());
+
+  React.useEffect(() => {
+    if (initialVideos) sourceVideoElsRef.current = initialVideos;
+  }, [initialVideos]);
   const outStreamRef = React.useRef<MediaStream | null>(null);
   const animationRef = React.useRef<number | null>(null);
   const lastRenderRef = React.useRef<number>(0);
@@ -87,21 +91,10 @@ describe('useCanvasCompositor (draw) — unit', () => {
     // setting the map on the existing ref via DOM (indirect but effective).
     // We rely on the hook reading sourceVideoElsRef.current during draw.
 
-    // Re-render with layer present
-    rerender(<TestHarness layers={[layer]} />);
-
-    // Attach the fake video into the global map used by hook (simulate sourceVideoElsRef)
-    // (find the canvas element's owner React instance by querying the DOM)
-    const canvas = document.querySelector('canvas') as HTMLCanvasElement;
-    // the hook created a Map inside the component; we can't directly access it here,
-    // but the compositor will try to find a video with id 's1' in the provided ref.
-    // To simulate that, create a global lookup used by the draw function via document.
-
-    // Create a hidden video element with the same sourceId on the page so drawImage can use it.
-    fakeVideo.setAttribute('data-test-source-id', 's1');
-    fakeVideo.style.position = 'absolute';
-    fakeVideo.style.left = '-9999px';
-    document.body.appendChild(fakeVideo);
+    // Re-render with layer present and pass the source video map so the hook can find it
+    const map = new Map<string, HTMLVideoElement>();
+    map.set('s1', fakeVideo);
+    rerender(<TestHarness layers={[layer]} initialVideos={map} />);
 
     // wait for the compositor loop to run and attempt to draw
     await waitFor(() => expect(fakeCtx.drawImage).toHaveBeenCalled(), { timeout: 2000 });

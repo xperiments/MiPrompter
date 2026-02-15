@@ -9,7 +9,7 @@ describe('logger utility', () => {
   });
 
   it('debug is gated by enableDebug()', () => {
-    const spy = vi.spyOn(console, 'debug').mockImplementation(() => {} as any);
+    const spy = vi.spyOn(console, 'debug').mockImplementation(() => {});
 
     logger.enableDebug(false);
     logger.debug('nope');
@@ -23,9 +23,9 @@ describe('logger utility', () => {
   });
 
   it('warn/info/error forward to console', () => {
-    const sw = vi.spyOn(console, 'warn').mockImplementation(() => {} as any);
-    const si = vi.spyOn(console, 'info').mockImplementation(() => {} as any);
-    const se = vi.spyOn(console, 'error').mockImplementation(() => {} as any);
+    const sw = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const si = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const se = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     logger.warn('w');
     logger.info('i');
