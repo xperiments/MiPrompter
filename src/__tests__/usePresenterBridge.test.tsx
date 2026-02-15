@@ -6,7 +6,7 @@ import { usePresenterBridge } from '../hooks/usePresenterBridge';
 import { act } from 'react';
 
 describe('usePresenterBridge', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => { vi.restoreAllMocks(); });
 
   it('posts messages to presenter window when available', async () => {
     let hook: ReturnType<typeof usePresenterBridge> | null = null;

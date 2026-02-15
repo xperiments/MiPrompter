@@ -4,6 +4,7 @@ import {
   useCameraDetection,
   type CameraInfo,
 } from "../hooks/useCameraDetection";
+import { useCanvasCompositor } from "../hooks/useCanvasCompositor";
 import { usePresenterBridge } from "../hooks/usePresenterBridge";
 import { useScripts } from "../hooks/useScripts";
 import { useUiStore, type UiStore } from "../stores/ui";
@@ -351,6 +352,8 @@ export default function Composer() {
       }
     }
   }, [layers]);
+
+
 
   // ensure layers using a localSharedScreens item are removed when that stream ends
   useEffect(() => {
@@ -788,6 +791,23 @@ export default function Composer() {
     targetW,
     targetH,
   );
+
+  // compositor responsibilities (RAF + canvas capture) are delegated to a hook
+  useCanvasCompositor({
+    canvasRef,
+    layersRef,
+    sourceVideoElsRef,
+    sourceStreamsRef,
+    outStreamRef,
+    animationRef,
+    lastRenderRef,
+    camsPermission: cams.permission,
+    fps: FPS,
+    defaultW: DEFAULT_CANVAS_W,
+    defaultH: DEFAULT_CANVAS_H,
+    renderedWidth,
+    renderedHeight,
+  });
 
   // expose composed MediaStream and dispatch event
   useEffect(() => {
