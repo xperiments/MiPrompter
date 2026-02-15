@@ -3,7 +3,7 @@ import type { ScriptDoc } from "../types";
 import { BottomBar } from "./editor/BottomBar";
 import { ChapterBlock } from "./editor/ChapterBlock";
 import { TopBar } from "./editor/TopBar";
-import Icon from "./Icon";
+import Icon from "./ui/Icon";
 
 // await nextFrame() gives a clear, testable point after the next paint.
 const nextFrame = () =>

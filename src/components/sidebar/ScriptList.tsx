@@ -1,6 +1,6 @@
 import React from "react";
 import type { ScriptDoc } from "../../types";
-import Icon from "../Icon";
+import Icon from "../ui/Icon";
 
 export function ScriptList(props: {
   /** Generic items: use `name` or `label` for display */

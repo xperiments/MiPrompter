@@ -1,5 +1,5 @@
 import React from "react";
-import Icon from "../Icon";
+import Icon from "../ui/Icon";
 import VideoSourceCard, { type VideoSource } from "./VideoSourceCard";
 
 type Props = {

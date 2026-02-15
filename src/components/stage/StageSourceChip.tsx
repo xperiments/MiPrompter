@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import Icon from "../Icon";
+import Icon from "../ui/Icon";
 import { usePresenterBridge } from "../../hooks/usePresenterBridge";
 import { getCameraStream } from "../../lib/media-devices";
 

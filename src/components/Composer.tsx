@@ -10,7 +10,7 @@ import { useUiStore } from "../stores/ui";
 import type { ScreenInfo } from "../lib/presenter";
 import { getCameraStream, getScreenStream } from "../lib/media-devices";
 import { EVT_PAIRED_DEVICES, EVT_REQUEST_PAIRED_DEVICES, EVT_COMPOSER_STREAM } from "../lib/keys";
-import Icon from "./Icon";
+import Icon from "./ui/Icon";
 import DisplaysPicker from "./stage/DisplaysPicker";
 import VideoSourcesStrip from "./stage/VideoSourcesStrip";
 import StageSourceChip, { type StagePlacedSource } from "./stage/StageSourceChip";

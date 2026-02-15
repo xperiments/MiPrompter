@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import Icon from "../Icon";
+import Icon from "../ui/Icon";
 
 export function AddScriptModal(props: {
   open: boolean;

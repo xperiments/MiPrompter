@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import Icon from "../Icon";
+import Icon from "../ui/Icon";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { sidebarSectionKey } from "../../lib/keys";
 

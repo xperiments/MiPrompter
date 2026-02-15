@@ -1,5 +1,5 @@
 import React from "react";
-import Icon from "../Icon";
+import Icon from "../ui/Icon";
 import StageSourceChip, { type StagePlacedSource } from "./StageSourceChip";
 import type { ScreenInfo } from "../../lib/presenter";
 

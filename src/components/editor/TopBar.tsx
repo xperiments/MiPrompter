@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import Icon from "../Icon";
+import Icon from "../ui/Icon";
 
 export function TopBar(props: {
   contentFontSize?: number;

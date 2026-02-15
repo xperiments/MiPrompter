@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { usePresenterBridge } from "../../hooks/usePresenterBridge";
 import type { CameraInfo } from "../../hooks/useCameraDetection";
 import type { ScreenInfo } from "../../lib/presenter";
-import Icon from "../Icon";
+import Icon from "../ui/Icon";
 import { getCameraStream } from "../../lib/media-devices";
 
 export type VideoSource = {

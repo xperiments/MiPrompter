@@ -1,5 +1,5 @@
 import React from "react";
-import Icon from "../Icon";
+import Icon from "../ui/Icon";
 
 const TransportButton = (props: {
   title: string;

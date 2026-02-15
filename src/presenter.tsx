@@ -1,7 +1,7 @@
 import React, { useMemo, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { useWindowMessages } from "./lib/window-message";
-import Icon from "./components/Icon";
+import Icon from "./components/ui/Icon";
 import { PRESENTER_PAIR_ID } from "./lib/keys";
 import { getScreenStream } from "./lib/media-devices";
 

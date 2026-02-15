@@ -1,7 +1,7 @@
 import React, { memo } from "react";
 import { SidebarSection } from "../sidebar/SidebarSection";
 import { ScriptList } from "../sidebar/ScriptList";
-import Icon from "../Icon";
+import Icon from "../ui/Icon";
 
 type ScriptItem = { id: string; name?: string; label?: string };
 
