@@ -30,12 +30,10 @@ type Appearance = Partial<{
   activeLinePosition: number;
   // selected font-family (Google Fonts key, e.g. 'Inter' or 'Open+Sans')
   fontFamily?: string;
-  // selected video input device id — when set, presenter will show the camera above the text
-  videoDeviceId?: string | null;
 
   // overlay controls
   showOverlay?: boolean;
-  overlayShape?: "camera" | "circle" | "cross" | "snap" | "square";
+  overlayShape?: "circle" | "cross" | "snap" | "square";
   overlayColor?: string;
   overlayOpacity?: number;
   overlayPosX?: number;
@@ -721,13 +719,6 @@ function Presenter() {
     );
   }, [state.payload.doc, appearance.preserveFormatting]);
 
-  // --- Camera handling (presenter-side) ---
-  const videoRef = React.useRef<HTMLVideoElement | null>(null);
-  const overlayVideoRef = React.useRef<HTMLVideoElement | null>(null);
-
-  const streamRef = React.useRef<MediaStream | null>(null);
-  const [cameraError, setCameraError] = React.useState<string | null>(null);
-
   // WebRTC: if presenter is opened with a hash (roomId), join signaling and answer offers
   React.useEffect(() => {
     const DEFAULT_WS_ROOM = "smui-default";
@@ -1019,82 +1010,6 @@ function Presenter() {
       pc?.close();
     };
   }, []);
-  React.useEffect(() => {
-    let mounted = true;
-
-    async function applyCamera(deviceId?: string | null) {
-      // always stop any existing stream first
-
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-
-      streamRef.current = null;
-
-      // If overlay is hidden or not the 'camera' shape we do not open the camera (presenter shows only dummy visuals)
-      if (!appearance.showOverlay || appearance.overlayShape !== "camera") {
-        setCameraError(null);
-
-        sendToController({ type: "presenter-camera", active: false });
-
-        return;
-      }
-
-      // no device selected -> nothing to do
-      if (!deviceId) {
-        setCameraError(null);
-
-        sendToController({ type: "presenter-camera", active: false });
-
-        return;
-      }
-
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { deviceId: { exact: deviceId } },
-        });
-        if (!mounted) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        streamRef.current = stream;
-        // attach to the large-background video (if present)
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-        }
-        // also attach to the overlay badge video (if present) so the small
-        // movable badge shows the live feed when overlayShape === 'camera'
-        if (overlayVideoRef.current) {
-          overlayVideoRef.current.srcObject = stream;
-          await overlayVideoRef.current.play();
-        }
-
-        setCameraError(null);
-
-        sendToController({ type: "presenter-camera", active: true });
-      } catch (err: any) {
-        const msg = String(err?.message ?? err ?? "Camera error");
-        setCameraError(msg);
-
-        sendToController({ type: "presenter-camera", active: false, error: msg });
-      }
-    }
-
-    applyCamera(appearance.videoDeviceId ?? null);
-    return () => {
-      mounted = false;
-
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-
-      streamRef.current = null;
-
-      if (overlayVideoRef.current) overlayVideoRef.current.srcObject = null;
-    };
-  }, [
-    appearance.videoDeviceId,
-    appearance.showOverlay,
-    appearance.overlayShape,
-  ]);
-
   const rootStyle: React.CSSProperties = {
     width: "100vw",
     height: "100vh",
@@ -1231,80 +1146,6 @@ function Presenter() {
           />
         </>
       )}
-
-      {/* Camera background (fixed, centered, rear) — only active when overlay is visible, a device is selected, and the overlay shape is 'camera' */}
-      {appearance.videoDeviceId &&
-      appearance.showOverlay &&
-      appearance.overlayShape === "camera" ? (
-        <div
-          aria-hidden
-          style={{
-            position: "fixed",
-            left: 0,
-            top: 0,
-            right: 0,
-            bottom: 0,
-            display: "grid",
-            placeItems: "center",
-            pointerEvents: "none",
-            zIndex: 1,
-          }}
-        >
-          <div
-            style={{
-              position: "relative",
-              width: "min(90vw, 100vw)",
-              height: "min(90vh, 100vh)",
-              maxHeight: "100vh",
-              overflow: "hidden",
-              borderRadius: 8,
-              boxShadow: "0 6px 30px rgba(0,0,0,0.6)",
-              transform: appearance.mirrorMode ? "scaleX(-1)" : undefined,
-              background: "#070707",
-            }}
-          >
-            {cameraError ? (
-              <div
-                style={{
-                  color: "#fecaca",
-                  padding: 12,
-                  fontSize: 13,
-                  position: "absolute",
-                  left: 12,
-                  top: 12,
-                  zIndex: 2,
-                }}
-              >
-                {cameraError}
-              </div>
-            ) : (
-              <video
-                ref={videoRef}
-                muted
-                playsInline
-                style={{
-                  width: "100%",
-
-                  objectFit: "cover",
-                  display: "block",
-                }}
-              />
-            )}
-
-            {/* subtle dark overlay so text remains readable over the video */}
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                background:
-                  "linear-gradient(rgba(0,0,0,0.18), rgba(0,0,0,0.28))",
-                pointerEvents: "none",
-                zIndex: 1,
-              }}
-            />
-          </div>
-        </div>
-      ) : null}
 
       {/* incoming WebRTC stream (controller -> presenter) */}
 
@@ -1614,9 +1455,6 @@ function Presenter() {
                     ></path>
                   </svg>
                 );
-              case "camera": {
-                return <div></div>;
-              }
               case "snap":
               default:
                 return (

@@ -28,8 +28,6 @@ export type PresenterAppearance = {
   fontSize: number;
   // Selected font-family (e.g. 'Inter') — applied in presenter
   fontFamily?: string;
-  // Selected video input device id (Google: "None" = not set)
-  videoDeviceId?: string | null;
   lineSpacing: number;
   paragraphSpacing: number;
   sideMargins: number;
@@ -37,7 +35,7 @@ export type PresenterAppearance = {
 
   // Overlay controls (UI + presenter overlay)
   showOverlay?: boolean;                       // master toggle
-  overlayShape?: 'camera' | 'circle' | 'cross' | 'snap' | 'square';
+  overlayShape?: 'circle' | 'cross' | 'snap' | 'square';
   overlayColor?: string;                       // hex color
   overlayOpacity?: number;                     // 0-100
   overlayPosX?: number;                        // 0-100 (%) horizontal position in presenter

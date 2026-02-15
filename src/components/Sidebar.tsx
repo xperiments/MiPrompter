@@ -686,79 +686,6 @@ export function Sidebar(props: SidebarProps) {
         </div>
       </SidebarSection>
 
-      {/* Video Source (new) */}
-      <SidebarSection title="Video Inputs" icon="movie">
-        <div className="space-y-3 px-1">
-          <div className="text-xs text-white/55 mb-2">Input Sources</div>
-
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <div className="flex-1">
-              <ScriptList
-                items={[
-                  { id: "", label: "None" },
-                  ...cams.cameras.map((c) => ({
-                    id: c.deviceId,
-                    label: c.label,
-                  })),
-                ]}
-                activeId={
-                  presenterPreview?.videoDeviceId ??
-                  presenter.videoDeviceId ??
-                  ""
-                }
-                onSelect={(id) => {
-                  const v = id;
-                  const next = v || undefined;
-
-                  // surface Display Options when the user picks a camera
-                  openSidebarSection("Display Options");
-
-                  // optimistic preview + immediate presenter update (fast-path)
-                  setPresenterPreview((p) => ({
-                    ...(p || {}),
-                    videoDeviceId: next,
-                  }));
-                  if (props.presenterWindowRef)
-                    updatePresenterWindow(props.presenterWindowRef, {
-                      videoDeviceId: next,
-                      ...(next
-                        ? { showOverlay: true, overlayShape: "camera" }
-                        : {}),
-                    });
-
-                  cams.setSelectedCameraId(v || null);
-
-                  // persist + enable overlay when selecting a camera
-                  updatePresenterAppearance({
-                    videoDeviceId: next,
-                    ...(next
-                      ? { showOverlay: true, overlayShape: "camera" }
-                      : {}),
-                  });
-                }}
-                onRefresh={cams.refresh}
-              />
-            </div>
-          </div>
-
-          <div className="text-xs text-white/40">
-            Permission:{" "}
-            <strong
-              style={{
-                color:
-                  cams.permission === "granted"
-                    ? "#34d399"
-                    : cams.permission === "denied"
-                      ? "#ef4444"
-                      : "#9ca3af",
-              }}
-            >
-              {cams.permission}
-            </strong>
-          </div>
-        </div>
-      </SidebarSection>
-
       {/* Overlays (new) */}
       <SidebarSection title="Overlays" icon="layers">
         <div className="space-y-3 px-0">
@@ -776,7 +703,6 @@ export function Sidebar(props: SidebarProps) {
                 updatePresenterAppearance({ overlayShape: v as string })
               }
               options={[
-                { value: "camera", label: "Camera" },
                 { value: "circle", label: "Circle" },
                 { value: "cross", label: "Cross" },
                 { value: "snap", label: "Snap" },
