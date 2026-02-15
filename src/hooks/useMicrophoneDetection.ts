@@ -37,24 +37,24 @@ async function awaitDeviceChange(timeout = 800): Promise<void> {
       if (done) return;
       done = true;
       try {
-        navigator.mediaDevices?.removeEventListener?.('devicechange', onChange as any);
+        navigator.mediaDevices?.removeEventListener?.('devicechange', onChange as EventListener);
       } catch {
         // Ignore
       }
       resolve();
     };
-    
+
     try {
-      navigator.mediaDevices?.addEventListener?.('devicechange', onChange as any);
+      navigator.mediaDevices?.addEventListener?.('devicechange', onChange as EventListener);
     } catch {
       // Ignore
     }
-    
+
     setTimeout(() => {
       if (done) return;
       done = true;
       try {
-        navigator.mediaDevices?.removeEventListener?.('devicechange', onChange as any);
+        navigator.mediaDevices?.removeEventListener?.('devicechange', onChange as EventListener);
       } catch {
         // Ignore
       }
@@ -98,11 +98,14 @@ export function useMicrophoneDetection() {
     const list = await navigator.mediaDevices.enumerateDevices();
     return list
       .filter((d) => d.kind === 'audioinput')
-      .map((d) => ({
-        deviceId: d.deviceId,
-        label: d.label || '',
-        groupId: (d as any).groupId,
-      }));
+      .map((d) => {
+        const md = d as MediaDeviceInfo;
+        return {
+          deviceId: md.deviceId,
+          label: md.label || '',
+          groupId: md.groupId ?? undefined,
+        };
+      });
   }
 
   async function detectMics() {
@@ -164,8 +167,8 @@ export function useMicrophoneDetection() {
           }
         }
       }
-    } catch (err: any) {
-      setError(String(err?.message ?? err ?? 'Failed to enumerate microphones'));
+    } catch (err: unknown) {
+      setError(String((err as Error)?.message ?? err ?? 'Failed to enumerate microphones'));
     } finally {
       setLoading(false);
     }
@@ -183,9 +186,9 @@ export function useMicrophoneDetection() {
       await awaitDeviceChange(1000);
       await detectMics();
       return true;
-    } catch (err: any) {
+    } catch (err: unknown) {
       setPermission('denied');
-      setError(String(err?.message ?? err ?? 'Permission denied'));
+      setError(String((err as Error)?.message ?? err ?? 'Permission denied'));
       return false;
     } finally {
       setLoading(false);
@@ -202,9 +205,9 @@ export function useMicrophoneDetection() {
       setPermission('granted');
       await detectMics();
       return true;
-    } catch (err: any) {
+    } catch (err: unknown) {
       setPermission('denied');
-      setError(String(err?.message ?? err ?? 'Permission denied'));
+      setError(String((err as Error)?.message ?? err ?? 'Permission denied'));
       return false;
     } finally {
       setLoading(false);
@@ -218,7 +221,7 @@ export function useMicrophoneDetection() {
     try {
       navigator.permissions
         ?.query?.({ name: 'microphone' as PermissionName })
-        .then((p) => setPermission(p.state as any))
+        .then((p) => setPermission(p.state as PermissionState))
         .catch(() => {});
     } catch {
       // Ignore
@@ -229,7 +232,7 @@ export function useMicrophoneDetection() {
       try {
         navigator.permissions
           ?.query?.({ name: 'microphone' as PermissionName })
-          .then((p) => setPermission(p.state as any))
+          .then((p) => setPermission(p.state as PermissionState))
           .catch(() => {});
       } catch {
         // Ignore
@@ -242,7 +245,7 @@ export function useMicrophoneDetection() {
 
     window.addEventListener(EVT_PERMISSIONS_UPDATED, handlePermissionsUpdate);
     try {
-      navigator.mediaDevices?.addEventListener?.('devicechange', handleDeviceChange as any);
+      navigator.mediaDevices?.addEventListener?.('devicechange', handleDeviceChange as EventListener);
     } catch {
       // Ignore
     }
@@ -250,7 +253,7 @@ export function useMicrophoneDetection() {
     return () => {
       window.removeEventListener(EVT_PERMISSIONS_UPDATED, handlePermissionsUpdate);
       try {
-        navigator.mediaDevices?.removeEventListener?.('devicechange', handleDeviceChange as any);
+        navigator.mediaDevices?.removeEventListener?.('devicechange', handleDeviceChange as EventListener);
       } catch {
         // Ignore
       }

@@ -30,11 +30,11 @@ export function ContextMenu(props: {
     >
       {props.items.map((it, idx) => {
         if (it.label === "—") {
-          return <div key={idx} className="h-px bg-white/10 my-1" />;
+          return <div key={`${it.label ?? 'sep'}-${idx}`} className="h-px bg-white/10 my-1" />;
         }
         return (
           <button
-            key={idx}
+            key={`${it.label ?? 'item'}-${idx}`}
             disabled={it.disabled}
             className={[
               "w-full px-3 py-2 text-left text-sm flex items-center justify-between",

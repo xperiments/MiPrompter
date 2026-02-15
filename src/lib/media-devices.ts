@@ -93,9 +93,19 @@ export async function getCameraStream(deviceId: string): Promise<MediaStream> {
   // resolution (e.g. 1920×1200) and will ignore an 'ideal' 1920×1080 request —
   // attempt applyConstraints() first with exact values, then fall back to the
   // original constraints if that fails.
-  const desiredWidth = (constraints.width as any)?.ideal ?? (constraints.width as any) ?? undefined;
-  const desiredHeight = (constraints.height as any)?.ideal ?? (constraints.height as any) ?? undefined;
-  const desiredFps = (constraints.frameRate as any)?.ideal ?? (constraints.frameRate as any) ?? undefined;
+  function getConstraintNumber(v: unknown): number | undefined {
+    if (typeof v === 'number') return v;
+    if (v && typeof v === 'object') {
+      const o = v as { ideal?: number; exact?: number };
+      const n = o.ideal ?? o.exact;
+      return typeof n === 'number' ? n : undefined;
+    }
+    return undefined;
+  }
+
+  const desiredWidth = getConstraintNumber(constraints.width);
+  const desiredHeight = getConstraintNumber(constraints.height);
+  const desiredFps = getConstraintNumber(constraints.frameRate);
 
   if (track && (desiredWidth || desiredHeight || desiredFps)) {
     try {
@@ -118,7 +128,10 @@ export async function getCameraStream(deviceId: string): Promise<MediaStream> {
 }
 
 export async function getScreenStream(): Promise<MediaStream> {
-  return (navigator.mediaDevices as any).getDisplayMedia({ video: true });
+  const md = navigator.mediaDevices as unknown as { getDisplayMedia?: (opts: MediaStreamConstraints) => Promise<MediaStream> };
+  if (typeof md.getDisplayMedia === 'function') return md.getDisplayMedia({ video: true });
+  // fallback
+  return navigator.mediaDevices.getUserMedia({ video: true });
 }
 
 export async function getBasicCameraStream(deviceId?: string): Promise<MediaStream> {

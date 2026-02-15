@@ -6,7 +6,7 @@ import {
 } from "../hooks/useCameraDetection";
 import { usePresenterBridge } from "../hooks/usePresenterBridge";
 import { useScripts } from "../hooks/useScripts";
-import { useUiStore } from "../stores/ui";
+import { useUiStore, type UiStore } from "../stores/ui";
 import type { ScreenInfo } from "../lib/presenter";
 import { getCameraStream, getScreenStream } from "../lib/media-devices";
 import { EVT_PAIRED_DEVICES, EVT_REQUEST_PAIRED_DEVICES, EVT_COMPOSER_STREAM } from "../lib/keys";
@@ -76,7 +76,7 @@ export default function Composer() {
 
   // get app state needed when opening presenter so it receives doc + appearance
   const { docs, activeDocId } = useScripts();
-  const appearance = useUiStore((s: any) => s.appearance);
+  const appearance = useUiStore((s: UiStore) => s.appearance);
 
   // selectedDisplayId is the ScreenInfo.id for the selected screen in this view
   const [selectedDisplayId, setSelectedDisplayId] = useState<string | null>(
@@ -103,7 +103,7 @@ export default function Composer() {
     const requestPaired = () => {
       try {
         window.dispatchEvent(new CustomEvent(EVT_REQUEST_PAIRED_DEVICES));
-        const existing = (window as any).__smui_pairedDevices;
+        const existing = window.__smui_pairedDevices;
         if (Array.isArray(existing)) {
           setPairedDevices(existing);
         }
@@ -616,7 +616,7 @@ export default function Composer() {
             dh: renderH,
             offsetX: 0,
             offsetY,
-          } as any;
+          };
         } else {
           const renderH = dh;
           const renderW = Math.round(dh * srcAR);
@@ -630,7 +630,7 @@ export default function Composer() {
             dh: renderH,
             offsetX,
             offsetY: 0,
-          } as any;
+          };
         }
       }
       return { sx: 0, sy: 0, sw: videoW, sh: videoH, dw, dh };
@@ -675,10 +675,10 @@ export default function Composer() {
 
         // apply fitMode to compute drawing dims
         const fit = computeFit(sw, sh, dw, dh, layer.fitMode);
-        const drawW = (fit as any).dw ?? dw;
-        const drawH = (fit as any).dh ?? dh;
-        const offsetX = (fit as any).offsetX ?? 0;
-        const offsetY = (fit as any).offsetY ?? 0;
+        const drawW = fit.dw ?? dw;
+        const drawH = fit.dh ?? dh;
+        const offsetX = fit.offsetX ?? 0;
+        const offsetY = fit.offsetY ?? 0;
 
         ctx.save();
         ctx.globalAlpha = Math.max(0, Math.min(1, layer.opacity ?? 1));
@@ -749,7 +749,7 @@ export default function Composer() {
         outStreamRef.current = null;
       }
       try {
-        delete (window as any).__smui_composerStream;
+        delete window.__smui_composerStream;
       } catch (_) {}
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
     };
@@ -798,13 +798,13 @@ export default function Composer() {
       outStreamRef.current.getTracks().forEach((t) => t.stop());
       outStreamRef.current = null;
       try {
-        delete (window as any).__smui_composerStream;
+        delete window.__smui_composerStream;
       } catch (_) {}
     }
 
     const stream = canvas.captureStream(FPS);
     outStreamRef.current = stream;
-    (window as any).__smui_composerStream = stream;
+    window.__smui_composerStream = stream;
     window.dispatchEvent(new CustomEvent(EVT_COMPOSER_STREAM, { detail: { stream } }));
 
     return () => {

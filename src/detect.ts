@@ -10,7 +10,7 @@ export type PlatformInfo = {
 };
 
 export function getPlatformInfo(): PlatformInfo {
-  const nav = window.navigator as any;
+  const nav = window.navigator as Navigator & { standalone?: boolean };
 
   const ua = navigator.userAgent || "";
   const platform = (navigator.platform || "").toLowerCase();
@@ -46,10 +46,14 @@ export function getPlatformInfo(): PlatformInfo {
       : "landscape";
 
   // Angle (best effort)
-  const angle =
-    (screen.orientation && typeof screen.orientation.angle === "number")
-      ? screen.orientation.angle
-      : (typeof (window as any).orientation === "number" ? (window as any).orientation : null);
+  let angleVal: number | null = null;
+  if (screen.orientation && typeof screen.orientation.angle === "number") {
+    angleVal = screen.orientation.angle;
+  } else {
+    const wOrientation = (window as unknown as { orientation?: number }).orientation;
+    angleVal = typeof wOrientation === "number" ? wOrientation : null;
+  }
+  const angle: number | null = angleVal;
 
   return { isIOS, isAndroid, isMobile, isSafari, isStandalone, orientation, angle };
 }
@@ -68,7 +72,7 @@ export function onOrientationChange(cb: (info: PlatformInfo) => void) {
   }
 
   // Fallbacks for browsers that are weird about MQ events
-  window.addEventListener("orientationchange", fire, { passive: true } as any);
+  window.addEventListener("orientationchange", fire, { passive: true });
   window.addEventListener("resize", fire, { passive: true });
 
   // initial
@@ -78,7 +82,7 @@ export function onOrientationChange(cb: (info: PlatformInfo) => void) {
     if (mql?.removeEventListener) mql.removeEventListener("change", fire);
     else if (mql?.removeListener) mql.removeListener(fire);
 
-    window.removeEventListener("orientationchange", fire as any);
-    window.removeEventListener("resize", fire as any);
+    window.removeEventListener("orientationchange", fire);
+    window.removeEventListener("resize", fire);
   };
 }

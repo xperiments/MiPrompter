@@ -13,13 +13,22 @@ import { useLocalStorageState } from "./hooks/useLocalStorageState";
 import { useLocalStorage } from "./hooks/useLocalStorage";
 import { useInitialPermissionsGate } from "./hooks/useInitialPermissionsGate";
 import { usePresenterBridge } from "./hooks/usePresenterBridge";
-import { useUiStore, DEFAULT_APPEARANCE } from "./stores/ui";
+import { useUiStore, DEFAULT_APPEARANCE, type UiStore } from "./stores/ui";
 import PairedDeviceList from "./components/sidebar/PairedDeviceList";
-import { useScreenDetection } from "./hooks/useScreenDetection"; 
+import { useScreenDetection } from "./hooks/useScreenDetection";
 import { useAppSpeechControl } from "./hooks/useAppSpeechControl"; // New Hook
+import { useUndoStack } from "./hooks/useUndoStack";
 import { hasPresenterWsSender } from "./lib/presenter-transport";
 
-import { APPEARANCE_STORAGE_KEY, INITIAL_PERMISSIONS_KEY, FORCE_SHOW_PERMISSION_OVERLAY, SPEECH_LANGUAGE_KEY, VOICE_COMMANDS_KEY, SCREEN_STORAGE_KEY, EVT_PERMISSIONS_UPDATED } from "./lib/keys";
+import {
+  APPEARANCE_STORAGE_KEY,
+  INITIAL_PERMISSIONS_KEY,
+  FORCE_SHOW_PERMISSION_OVERLAY,
+  SPEECH_LANGUAGE_KEY,
+  VOICE_COMMANDS_KEY,
+  SCREEN_STORAGE_KEY,
+  EVT_PERMISSIONS_UPDATED,
+} from "./lib/keys";
 
 export default function App() {
   const {
@@ -67,7 +76,7 @@ export default function App() {
   };
 
   // Normalize appearance: accept only the grouped shape and fill defaults.
-  const normalizeAppearance = (a: any) => {
+  const normalizeAppearance = (a: Partial<AppearanceSettings> | undefined) => {
     const editor = {
       ...DEFAULT_APPEARANCE.editor!,
       ...(a?.editor ?? {}),
@@ -146,7 +155,7 @@ export default function App() {
 
   const isPresenterActive = Boolean(
     (presenterWindowRef.current && !presenterWindowRef.current.closed) ||
-      hasPresenterWsSender(),
+    hasPresenterWsSender(),
   );
 
   // App-side Speech State (Controlled by UI)
@@ -259,8 +268,8 @@ export default function App() {
     });
   }, [voiceCommands, presenterState.windowOpen, presenter.voiceCommands]);
   // selectively subscribe instead of receiving many props.
-  const patchUiAppearance = useUiStore((s: any) => s.patchAppearance);
-  const setUiContentType = useUiStore((s: any) => s.setContentType);
+  const patchUiAppearance = useUiStore((s: UiStore) => s.patchAppearance);
+  const setUiContentType = useUiStore((s: UiStore) => s.setContentType);
 
   React.useEffect(() => {
     patchUiAppearance(appearance);
@@ -308,8 +317,6 @@ export default function App() {
   };
   type UndoEntry = EditEntry | SplitEntry | RemoveEntry;
 
-  const undoStackRef = React.useRef<UndoEntry[]>([]);
-  const redoStackRef = React.useRef<UndoEntry[]>([]);
   const lastRecordRef = React.useRef<{
     docId?: string;
     chapterId?: string;
@@ -318,16 +325,18 @@ export default function App() {
   const UNDO_COALESCE_MS = 1500; // coalesce rapid keystrokes into a single undo entry
   const MAX_UNDO = 200;
 
-  function pushUndoEntry(e: UndoEntry) {
-    const stack = undoStackRef.current;
-    stack.push(e);
-    if (stack.length > MAX_UNDO) stack.splice(0, stack.length - MAX_UNDO);
-  }
-  function pushRedoEntry(e: UndoEntry) {
-    const stack = redoStackRef.current;
-    stack.push(e);
-    if (stack.length > MAX_UNDO) stack.splice(0, stack.length - MAX_UNDO);
-  }
+  // centralized undo/redo stack (extracted to hook)
+  const {
+    pushUndo,
+    pushRedo,
+    popUndo,
+    popRedo,
+    clearRedo,
+    removeUndoEntriesForDoc,
+    removeRedoEntriesForDoc,
+    getUndoStack,
+    getRedoStack,
+  } = useUndoStack<UndoEntry>({ maxUndo: MAX_UNDO });
 
   /**
    * Apply a chapter text change while optionally recording an undo snapshot.
@@ -354,7 +363,7 @@ export default function App() {
           last.docId !== docId ||
           now - (last.time ?? 0) > UNDO_COALESCE_MS
         ) {
-          pushUndoEntry({
+          pushUndo({
             kind: "edit",
             docId,
             chapterId,
@@ -362,12 +371,12 @@ export default function App() {
             time: now,
           });
           // new user edit invalidates redo
-          redoStackRef.current = [];
+          clearRedo();
           lastRecordRef.current = { docId, chapterId, time: now };
         }
       } else {
         // non-user edits should also clear redo (to avoid surprising redo paths)
-        redoStackRef.current = [];
+        clearRedo();
       }
 
       // perform the actual update (don't record again)
@@ -398,12 +407,10 @@ export default function App() {
 
       // UNDO
       if (key === "z" && !e.shiftKey) {
-        const stack = undoStackRef.current;
-        if (!stack.length) return;
+        const entry = popUndo();
+        if (!entry) return;
         e.preventDefault();
         e.stopPropagation();
-
-        const entry = stack.pop()!;
 
         if (entry.kind === "edit") {
           // capture current text for redo
@@ -411,7 +418,7 @@ export default function App() {
             docs
               .find((d) => d.id === entry.docId)
               ?.chapters.find((c) => c.id === entry.chapterId)?.text ?? "";
-          pushRedoEntry({
+          pushRedo({
             kind: "edit",
             docId: entry.docId,
             chapterId: entry.chapterId,
@@ -446,7 +453,7 @@ export default function App() {
             }
 
             if (newId) {
-              pushRedoEntry({
+              pushRedo({
                 kind: "remove",
                 docId: entry.docId,
                 chapterId: String(newId),
@@ -468,7 +475,7 @@ export default function App() {
             (id) => doc?.chapters.find((c) => c.id === id)?.text ?? "",
           );
           const partsForRedo = [first, ...insertedTexts];
-          pushRedoEntry({
+          pushRedo({
             kind: "split",
             docId: entry.docId,
             chapterId: entry.chapterId,
@@ -502,12 +509,10 @@ export default function App() {
 
       // REDO (Shift+Z or Y)
       if ((key === "z" && e.shiftKey) || key === "y") {
-        const rstack = redoStackRef.current;
-        if (!rstack.length) return;
+        const entry = popRedo();
+        if (!entry) return;
         e.preventDefault();
         e.stopPropagation();
-
-        const entry = rstack.pop()!;
 
         if (entry.kind === "edit") {
           // capture current for undo
@@ -515,7 +520,7 @@ export default function App() {
             docs
               .find((d) => d.id === entry.docId)
               ?.chapters.find((c) => c.id === entry.chapterId)?.text ?? "";
-          pushUndoEntry({
+          pushUndo({
             kind: "edit",
             docId: entry.docId,
             chapterId: entry.chapterId,
@@ -544,7 +549,7 @@ export default function App() {
             const prevIndex = doc.chapters.findIndex(
               (c) => c.id === entry.chapterId,
             );
-            pushUndoEntry({
+            pushUndo({
               kind: "remove",
               docId: entry.docId,
               chapterId: entry.chapterId,
@@ -564,7 +569,7 @@ export default function App() {
             docs
               .find((d) => d.id === entry.docId)
               ?.chapters.find((c) => c.id === entry.chapterId)?.text ?? "";
-          pushUndoEntry({
+          pushUndo({
             kind: "split",
             docId: entry.docId,
             chapterId: entry.chapterId,
@@ -630,10 +635,8 @@ export default function App() {
         const alreadyAsked = Boolean(ls.getRaw(INITIAL_PERMISSIONS_KEY));
         let micGranted = false;
         try {
-          const p = await (navigator.permissions as any).query?.({
-            name: "microphone",
-          });
-          micGranted = p?.state === "granted";
+          const p = await navigator.permissions?.query?.({ name: "microphone" as PermissionName });
+          micGranted = (p as PermissionStatus | undefined)?.state === "granted";
         } catch (_) {
           // if Permissions API isn't available, don't assume granted
           micGranted = false;
@@ -660,8 +663,8 @@ export default function App() {
     e.preventDefault();
 
     // coordinates of the original click
-    const x = (e as any).clientX ?? window.innerWidth / 2;
-    const y = (e as any).clientY ?? window.innerHeight / 2;
+    const x = e.clientX ?? window.innerWidth / 2;
+    const y = e.clientY ?? window.innerHeight / 2;
 
     // Start permission requests synchronously (gesture-primed). Don't await.
 
@@ -671,7 +674,7 @@ export default function App() {
       }) as Promise<MediaStream>
     ).catch(() => {});
 
-    (window as any).getScreenDetails?.().catch(() => {});
+    (window as unknown as { getScreenDetails?: () => Promise<unknown> }).getScreenDetails?.().catch(() => {});
 
     // Temporarily allow pointer-events through so we can forward the click to
     // the underlying element the user actually intended to click.
@@ -720,7 +723,9 @@ export default function App() {
       }
     })();
 
-    let chosenScreen = {
+    type LocalScreen = { id: string; left: number; top: number; width: number; height: number; isPrimary?: boolean; label: string };
+
+    let chosenScreen: LocalScreen = {
       id: "0",
       left: 0,
       top: 0,
@@ -728,16 +733,13 @@ export default function App() {
       height: window.screen.height,
       isPrimary: true,
       label: `Primary — ${window.screen.width}×${window.screen.height}`,
-    } as any;
+    };
 
-    const details = await (window as any).getScreenDetails?.();
-    const screensList: any[] = details?.screens ?? [];
+    const details = await (window as unknown as { getScreenDetails?: () => Promise<{ screens?: unknown[]; currentScreen?: unknown }> }).getScreenDetails?.();
+    type RawScreen = { id?: unknown; left?: unknown; top?: unknown; width?: unknown; height?: unknown; isPrimary?: unknown; label?: unknown };
+    const screensList: RawScreen[] = (details as unknown as { screens?: RawScreen[] })?.screens ?? [];
     if (persisted && screensList.length) {
-      const match = screensList.find(
-        (s: any) =>
-          (s.label || "").toString() === persisted ||
-          String(s.id) === persisted,
-      );
+      const match = screensList.find((s: RawScreen) => (String(s.label ?? "") === persisted) || String(s.id) === persisted);
       if (match)
         chosenScreen = {
           id: String(match.id ?? 0),
@@ -746,7 +748,7 @@ export default function App() {
           width: Number(match.width ?? window.screen.width),
           height: Number(match.height ?? window.screen.height),
           isPrimary: Boolean(match.isPrimary),
-          label: match.label ?? `Display — ${match.width}×${match.height}`,
+          label: String(match.label ?? `Display — ${match.width}×${match.height}`),
         };
     } else if (screensList.length) {
       const s = screensList[0];
@@ -757,7 +759,7 @@ export default function App() {
         width: Number(s.width ?? window.screen.width),
         height: Number(s.height ?? window.screen.height),
         isPrimary: Boolean(s.isPrimary),
-        label: s.label ?? `Display — ${s.width}×${s.height}`,
+        label: String(s.label ?? `Display — ${s.width}×${s.height}`),
       };
     }
 
@@ -931,7 +933,7 @@ export default function App() {
       const insertedIds = newId ? [String(newId)] : [];
 
       // push single undo entry
-      pushUndoEntry({
+      pushUndo({
         kind: "split",
         docId: activeDocId,
         chapterId,
@@ -940,7 +942,7 @@ export default function App() {
         parts: [beforeText, remainderText],
         time: Date.now(),
       });
-      redoStackRef.current = [];
+      clearRedo();
 
       // keep user focus on the source (split) chapter
       scriptAreaRef.current?.focusChapter(chapterId);
@@ -1068,22 +1070,15 @@ export default function App() {
             onAddChapter={(afterId?: string, text?: string) => {
               const id = addChapter(activeDocId, { afterId, text });
               // structural change — clear undone snapshots for this doc
-              undoStackRef.current = undoStackRef.current.filter(
-                (e) => e.docId !== activeDocId,
-              );
-              redoStackRef.current = redoStackRef.current.filter(
-                (e) => e.docId !== activeDocId,
-              );
+              removeUndoEntriesForDoc(activeDocId);
+              removeRedoEntriesForDoc(activeDocId);
               return id;
             }}
             onAddChapterBefore={(beforeId) => {
               const id = addChapterBefore(activeDocId, beforeId);
-              undoStackRef.current = undoStackRef.current.filter(
-                (e) => e.docId !== activeDocId,
-              );
-              redoStackRef.current = redoStackRef.current.filter(
-                (e) => e.docId !== activeDocId,
-              );
+              // structural change — clear undone snapshots for this doc
+              removeUndoEntriesForDoc(activeDocId);
+              removeRedoEntriesForDoc(activeDocId);
               return id;
             }}
             onRemoveChapter={(chapterId) => {
@@ -1104,7 +1099,7 @@ export default function App() {
                     : null;
 
                 if (idx !== -1) {
-                  pushUndoEntry({
+                  pushUndo({
                     kind: "remove",
                     docId: activeDocId,
                     chapterId,
@@ -1118,9 +1113,7 @@ export default function App() {
                 removeChapter(activeDocId, chapterId);
 
                 // structural change invalidates redo for this doc
-                redoStackRef.current = redoStackRef.current.filter(
-                  (e) => e.docId !== activeDocId,
-                );
+                removeRedoEntriesForDoc(activeDocId);
 
                 // keep focus inside the editor so global Undo (Cmd/Ctrl+Z) will work immediately
                 if (focusId) {
@@ -1137,19 +1130,13 @@ export default function App() {
               } catch (_) {
                 // best-effort fallback: remove and clear redo
                 removeChapter(activeDocId, chapterId);
-                redoStackRef.current = redoStackRef.current.filter(
-                  (e) => e.docId !== activeDocId,
-                );
+                removeRedoEntriesForDoc(activeDocId);
               }
             }}
             onMoveChapter={(chapterId: string, toIndex: number) => {
               moveChapter(activeDocId, chapterId, toIndex);
-              undoStackRef.current = undoStackRef.current.filter(
-                (e) => e.docId !== activeDocId,
-              );
-              redoStackRef.current = redoStackRef.current.filter(
-                (e) => e.docId !== activeDocId,
-              );
+              removeUndoEntriesForDoc(activeDocId);
+              removeRedoEntriesForDoc(activeDocId);
             }}
             presenterWindowOpen={isPresenterActive}
             onPlay={onPlayFromEditor}
@@ -1213,7 +1200,7 @@ export default function App() {
                   }
 
                   // push a single undo entry that will restore the original chapter text and remove inserted chapters
-                  pushUndoEntry({
+                  pushUndo({
                     kind: "split",
                     docId: activeDocId,
                     chapterId,
@@ -1223,7 +1210,7 @@ export default function App() {
                     time: Date.now(),
                   });
                   // new user action invalidates redo
-                  redoStackRef.current = [];
+                  clearRedo();
 
                   // focus the source (split) chapter in the editor so user stays in context
                   scriptAreaRef.current?.focusChapter(chapterId);

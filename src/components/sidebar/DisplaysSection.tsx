@@ -36,7 +36,7 @@ function DisplaysSection({ screens, activeScreenLabel, onSelectScreen, onRefresh
     <SidebarSection title="Displays" icon="monitor">
       <div className="space-y-3">
         <ScriptList
-          items={items as any}
+          items={items as { id: string; label?: string }[]}
           activeId={activeScreenLabel ?? ""}
           onSelect={onSelectScreen}
           onRefresh={onRefresh}

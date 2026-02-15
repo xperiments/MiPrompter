@@ -1,7 +1,7 @@
 import React from "react";
 import Icon from "../ui/Icon";
 
-export function ChapterBlock(props: {
+export const ChapterBlock = React.memo(function ChapterBlock(props: {
   id: string;
   text: string;
   autoFocus?: boolean;
@@ -219,4 +219,4 @@ export function ChapterBlock(props: {
       </div>
     </div>
   );
-}
+});

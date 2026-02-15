@@ -2,7 +2,7 @@ import React from "react";
 import type { ScriptDoc } from "../../types";
 import Icon from "../ui/Icon";
 
-export function ScriptList(props: {
+export const ScriptList = React.memo(function ScriptList(props: {
   /** Generic items: use `name` or `label` for display */
   items: Array<{ id: string; name?: string; label?: string }>;
   activeId: string;
@@ -55,7 +55,7 @@ export function ScriptList(props: {
       </div>
     </div>
   );
-}
+});
 
 function MiniIconButton(props: { title: string; onClick: () => void; children: React.ReactNode }) {
   return (

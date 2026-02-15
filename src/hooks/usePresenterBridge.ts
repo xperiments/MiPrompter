@@ -1,10 +1,9 @@
-import { useEffect, useRef, useState, useCallback } from "react";
-import {
+import { useEffect, useRef, useState, useCallback } from "react";import type { ScriptDoc } from "../types";import {
   openTeleprompter,
   type ScreenInfo,
   type Appearance as PresenterAppearance,
 } from "../lib/presenter";
-import { sendToPresenterViaWs } from "../lib/presenter-transport";
+import { sendToPresenterViaWs, type PresenterMessage } from "../lib/presenter-transport";
 
 type PresenterState = {
   playing: boolean;
@@ -95,7 +94,7 @@ export function usePresenterBridge() {
   const openPresenter = useCallback(
     (opts: {
       screen: ScreenInfo;
-      docs?: any[];
+      docs?: ScriptDoc[];
       activeDocId?: string | null;
       appearance?: PresenterAppearance;
     }) => {
@@ -115,9 +114,9 @@ export function usePresenterBridge() {
     [],
   );
 
-  type PresenterMessage = { type: string; [key: string]: any };
+  // Provide a typed handler signature so subscribers get properly-typed payloads.
   type MessageHandler = (
-    payload: any,
+    payload: PresenterMessage,
     meta: {
       origin: string;
       transport: "postMessage" | "ws";

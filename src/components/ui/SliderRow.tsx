@@ -27,7 +27,7 @@ export function SliderRow(props: {
           onMouseUp={() => props.onChangeEnd?.(props.value)}
           onTouchEnd={() => props.onChangeEnd?.(props.value)}
           onBlur={() => props.onChangeEnd?.(props.value)}
-          onKeyUp={(e) => { if ((e as any).key === 'Enter') props.onChangeEnd?.(props.value); }}
+          onKeyUp={(e) => { if (e.key === 'Enter') props.onChangeEnd?.(props.value); }}
         />
         <div className="w-14 text-right text-xs text-white/70 ui-inset rounded-md px-2 py-1">
           {props.value} {props.unit ?? ""}

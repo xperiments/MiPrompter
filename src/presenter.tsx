@@ -4,6 +4,7 @@ import { useWindowMessages } from "./lib/window-message";
 import Icon from "./components/ui/Icon";
 import { PRESENTER_PAIR_ID } from "./lib/keys";
 import { getScreenStream } from "./lib/media-devices";
+import type { PresenterMessage } from "./lib/presenter-transport";
 
 // --- Types ---
 type ScriptChapter = { id: string; text: string };
@@ -300,7 +301,7 @@ function PrompterView({
       const parent = scrollParent as HTMLElement;
       const parentRect = parent.getBoundingClientRect
         ? parent.getBoundingClientRect()
-        : ({ top: 0, height: window.innerHeight } as any);
+        : ({ top: 0, height: window.innerHeight } as { top: number; height: number });
       const elRect = el.getBoundingClientRect();
 
       // Desired vertical position inside the parent (px). Use the same default
@@ -509,7 +510,7 @@ function Presenter() {
   const stateRetryAttemptsRef = React.useRef(0);
   const MAX_STATE_REQUEST_RETRIES = 6;
 
-  const sendToController = React.useCallback((msg: any) => {
+  const sendToController = React.useCallback((msg: PresenterMessage) => {
     const origin = window.location.origin;
     const room = (location.hash || "").replace("#", "").trim();
 
@@ -528,7 +529,7 @@ function Presenter() {
 
     // Fallback to postMessage for local controller
     const w = window.opener || window.parent;
-    if (w && (w as any).postMessage) {
+    if (w && typeof (w as Window).postMessage === "function") {
       (w as Window).postMessage(msg, origin);
       return true;
     }
@@ -537,25 +538,31 @@ function Presenter() {
 
   // Provide a single message handler that works for both postMessage and WS-sourced messages
   const handleIncoming = React.useCallback(
-    async (data: any) => {
-      if (!data || typeof data.type !== "string") return;
-      console.log("[Presenter] handleIncoming:", data.type, data);
-      dispatch({ type: "cmd", cmd: data.type });
+    async (data: unknown) => {
+      if (!data || typeof data !== "object") return;
+      const type = (data as Record<string, unknown>)["type"];
+      if (typeof type !== "string") return;
+      const msg = data as PresenterMessage;
+      const raw = msg as unknown as Record<string, unknown>;
 
-      switch (data.type) {
+      console.log("[Presenter] handleIncoming:", msg.type, msg);
+      dispatch({ type: "cmd", cmd: msg.type });
+
+      switch (msg.type) {
         case "set-params":
         case "presenter-init":
           console.log("[Presenter] Applying init data:", data);
           applyInit(data);
           break;
         case "presenter-load-doc":
+          const incomingDoc = raw.doc as Record<string, unknown> | undefined;
           console.log(
             "[Presenter] Loading doc:",
-            data.doc?.name ?? "unknown",
+            incomingDoc?.name ?? "unknown",
             "chapters:",
-            data.doc?.chapters?.length ?? 0,
+            (incomingDoc?.chapters as unknown[] | undefined)?.length ?? 0,
           );
-          if (data.doc) dispatch({ type: "load-doc", doc: data.doc });
+          if (incomingDoc) dispatch({ type: "load-doc", doc: incomingDoc as unknown as ScriptDocShape });
           break;
         case "play":
           dispatch({ type: "play" });
@@ -570,12 +577,10 @@ function Presenter() {
           dispatch({ type: "reset" });
           break;
         case "set-word-index":
-          dispatch({ type: "set-word-index", index: data.index });
+          dispatch({ type: "set-word-index", index: Number(raw.index ?? 0) });
           break;
         case "presenter-goto-chapter": {
-          const cid =
-            typeof data.chapterId === "string" ? data.chapterId : null;
-          dispatch({ type: "set-chapter", chapterId: cid });
+          const cid = typeof (raw.chapterId as unknown) === "string" ? String(raw.chapterId) : null;
 
           // inform controller that the chapter was applied
           // we use state.payload.doc directly; if this arrives exactly at the same time as load-doc
@@ -590,11 +595,11 @@ function Presenter() {
           break;
         }
         case "presenter-playing":
-          if (data.playing) dispatch({ type: "play" });
+          if (Boolean(raw.playing)) dispatch({ type: "play" });
           else dispatch({ type: "pause" });
           break;
         case "presenter-mic":
-          dispatch({ type: "set-mic", active: Boolean(data.active) });
+          dispatch({ type: "set-mic", active: Boolean(raw.active) });
           break;
         case "presenter-voice-commands":
           // reflect in lastCmd for visibility / telemetry
@@ -623,11 +628,11 @@ function Presenter() {
               justifyContent: "center",
               color: "black",
               borderRadius: "8px",
-              zIndex: 9999,
+              zIndex: "9999",
               fontSize: "40px",
               fontFamily: "Inter",
               backgroundColor: "red",
-            } as any);
+            } as Partial<CSSStyleDeclaration>);
             document.body.appendChild(el);
             setTimeout(() => {
               el.remove();
@@ -804,7 +809,7 @@ function Presenter() {
               }
             }
 
-            const payload = {
+            const payload: Record<string, unknown> = {
               type: "pair-request",
               id,
               info: {
@@ -812,10 +817,10 @@ function Presenter() {
                 screen: { width: window.screen?.width || 0, height: window.screen?.height || 0 },
                 origin: "presenter",
               },
-            } as any;
+            };
 
             ws?.send(JSON.stringify(payload));
-            try { (window as any).__smui_presenterPairId = id; } catch (_) {}
+            try { window.__smui_presenterPairId = id; } catch (_) {}
 
           }
         } catch (_) {
@@ -847,7 +852,7 @@ function Presenter() {
                 id = `presenter-${Math.random().toString(36).slice(2, 8)}`;
                 try { localStorage.setItem(storageKey, id); } catch (_) {}
               }
-              const payload = { type: "pair-request", id, info: { ua: navigator.userAgent, screen: { width: window.screen?.width || 0, height: window.screen?.height || 0 }, origin: "presenter" } } as any;
+              const payload: Record<string, unknown> = { type: "pair-request", id, info: { ua: navigator.userAgent, screen: { width: window.screen?.width || 0, height: window.screen?.height || 0 }, origin: "presenter" } };
               try { ws?.send(JSON.stringify(payload)); } catch (_) {}
 
               return;
@@ -869,21 +874,17 @@ function Presenter() {
         }
 
         // Cached room state (seed late joiners)
-        if (msg?.type === "state" && msg.data) {
-          const d = msg.data as any;
-          if (d.payload) applyInit(d.payload);
-          if (d.currentChapterId)
-            dispatch({ type: "set-chapter", chapterId: d.currentChapterId });
-          if (typeof d.playing === "boolean")
-            dispatch({ type: d.playing ? "play" : "pause" });
-          if (typeof d.mic === "boolean")
-            dispatch({ type: "set-mic", active: d.mic });
-          if (typeof d.wordIndex === "number")
-            dispatch({ type: "set-word-index", index: d.wordIndex });
+        if (msg?.type === "state" && (msg as Record<string, unknown>).data) {
+          const d = ((msg as Record<string, unknown>)?.data) as Record<string, unknown> | undefined;
+          if (d?.payload) applyInit(d.payload as InitPayload);
+          if (d?.currentChapterId) dispatch({ type: "set-chapter", chapterId: String(d.currentChapterId) });
+          if (typeof d?.playing === "boolean") dispatch({ type: d!.playing ? "play" : "pause" });
+          if (typeof d?.mic === "boolean") dispatch({ type: "set-mic", active: Boolean(d!.mic) });
+          if (typeof d?.wordIndex === "number") dispatch({ type: "set-word-index", index: Number(d!.wordIndex) });
 
           // If cached state is missing critical bits (doc/appearance), ask controller to re-send
-          const missingDoc = !d.payload || !d.payload.doc;
-          const missingAppearance = !d.payload || !d.payload.appearance;
+          const missingDoc = !d?.payload || !((d.payload as Record<string, unknown>)?.doc);
+          const missingAppearance = !d?.payload || !((d.payload as Record<string, unknown>)?.appearance);
           if (missingDoc || missingAppearance) {
             // immediate single request
             try {
@@ -1085,7 +1086,7 @@ function Presenter() {
   }, []);
 
   const [pseudoFsActive, setPseudoFsActive] = React.useState(false);
-  const isIos = typeof navigator !== "undefined" && /iP(ad|hone|od)/i.test(navigator.userAgent) || (typeof navigator !== "undefined" && navigator.platform === "MacIntel" && (navigator as any).maxTouchPoints > 1);
+  const isIos = typeof navigator !== "undefined" && /iP(ad|hone|od)/i.test(navigator.userAgent) || (typeof navigator !== "undefined" && navigator.platform === "MacIntel" && (navigator.maxTouchPoints ?? 0) > 1);
 
   React.useEffect(() => {
     if (pseudoFsActive) document.documentElement.classList.add("smui-pseudo-fullscreen");
@@ -1204,7 +1205,7 @@ function Presenter() {
                 }
               };
 
-              ws.addEventListener("message", onMessage, { once: false } as any);
+              ws.addEventListener("message", onMessage);
             });
 
             // Step 5: Get display stream
@@ -1244,7 +1245,7 @@ function Presenter() {
                 ) as HTMLElement | null;
                 window.focus?.();
                 if (anchor) {
-                  anchor.focus({ preventScroll: true } as any);
+                  anchor.focus({ preventScroll: true });
                 }
                 // Fallback to window.focus
                 if (!document.hasFocus()) window.focus();
@@ -1419,11 +1420,11 @@ function Presenter() {
             const c = appearance.overlayColor || "#2563eb";
             const shape = appearance.overlayShape || "snap";
 
-            const svgProps = {
+            const svgProps: React.SVGProps<SVGSVGElement> = {
               width: 200,
               height: 200,
               style: { display: "block", opacity: op },
-            } as any;
+            };
 
             switch (shape) {
               case "circle":

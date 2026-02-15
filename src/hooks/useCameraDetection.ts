@@ -21,11 +21,14 @@ async function enumerateCameras(): Promise<CameraInfo[]> {
   const list = await navigator.mediaDevices.enumerateDevices();
   return list
     .filter((d) => d.kind === "videoinput")
-    .map((d) => ({
-      deviceId: d.deviceId,
-      label: d.label || "",
-      groupId: (d as any).groupId,
-    }));
+    .map((d) => {
+      const md = d as MediaDeviceInfo;
+      return {
+        deviceId: md.deviceId,
+        label: md.label || "",
+        groupId: md.groupId ?? undefined,
+      };
+    });
 }
 
 export function useCameraDetection() {
@@ -92,8 +95,17 @@ export function useCameraDetection() {
               for (const cam of mapped) {
                 try {
                   const c = await getOptimalVideoConstraints(cam.deviceId);
-                  const w = (c.width as any)?.ideal ?? (c.width as any) ?? 0;
-                  const h = (c.height as any)?.ideal ?? (c.height as any) ?? 0;
+                  function numericConstraint(v: number | ConstrainULongRange | undefined): number {
+                    if (typeof v === 'number') return v;
+                    if (v && typeof v === 'object') {
+                      const o = v as { ideal?: number; exact?: number };
+                      const n = o.ideal ?? o.exact;
+                      return typeof n === 'number' ? n : 0;
+                    }
+                    return 0;
+                  }
+                  const w = numericConstraint(c.width);
+                  const h = numericConstraint(c.height);
                   const score = (Number(w) || 0) * (Number(h) || 0);
                   if (score > bestScore) {
                     bestScore = score;
@@ -122,8 +134,8 @@ export function useCameraDetection() {
           if (found) setSelectedCameraId(found.deviceId);
         }
       }
-    } catch (err: any) {
-      setError(String(err?.message ?? err ?? "Failed to enumerate cameras"));
+    } catch (err: unknown) {
+      setError(String((err as Error)?.message ?? err ?? "Failed to enumerate cameras"));
     } finally {
       setLoading(false);
     }
@@ -138,9 +150,9 @@ export function useCameraDetection() {
       setPermission("granted");
       await detectCameras();
       return true;
-    } catch (err: any) {
+    } catch (err: unknown) {
       setPermission("denied");
-      setError(String(err?.message ?? err ?? "Permission denied"));
+      setError(String((err as Error)?.message ?? err ?? "Permission denied"));
       return false;
     } finally {
       setLoading(false);
@@ -155,9 +167,9 @@ export function useCameraDetection() {
       setPermission("granted");
       await detectCameras();
       return true;
-    } catch (err: any) {
+    } catch (err: unknown) {
       setPermission("denied");
-      setError(String(err?.message ?? err ?? "Permission denied"));
+      setError(String((err as Error)?.message ?? err ?? "Permission denied"));
       return false;
     } finally {
       setLoading(false);
@@ -169,7 +181,7 @@ export function useCameraDetection() {
 
     navigator.permissions
       ?.query?.({ name: "camera" as PermissionName })
-      .then((p) => setPermission(p.state as any))
+      .then((p) => setPermission(p.state as PermissionState))
       .catch(() => {});
 
     function handleDeviceChange() {
@@ -179,7 +191,7 @@ export function useCameraDetection() {
 
     navigator.mediaDevices?.addEventListener?.(
       "devicechange",
-      handleDeviceChange as any,
+      handleDeviceChange as EventListener,
     );
 
     return () => {
@@ -187,7 +199,7 @@ export function useCameraDetection() {
 
       navigator.mediaDevices?.removeEventListener?.(
         "devicechange",
-        handleDeviceChange as any,
+        handleDeviceChange as EventListener,
       );
     };
   }, []);

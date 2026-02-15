@@ -28,7 +28,7 @@ async function withStore<T>(mode: IDBTransactionMode, cb: (store: IDBObjectStore
   });
 }
 
-export async function idbGet<T = any>(key: string): Promise<T | null> {
+export async function idbGet<T = unknown>(key: string): Promise<T | null> {
   try {
     return await withStore<T | null>("readonly", (s) => s.get(key));
   } catch (err) {
@@ -36,7 +36,7 @@ export async function idbGet<T = any>(key: string): Promise<T | null> {
   }
 }
 
-export async function idbSet(key: string, value: any): Promise<void> {
+export async function idbSet(key: string, value: unknown): Promise<void> {
   await withStore<void>("readwrite", (s) => s.put(value, key));
 }
 

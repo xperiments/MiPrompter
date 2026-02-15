@@ -46,12 +46,12 @@ export type UiStore = {
   patchAppearance: (p: Partial<AppearanceSettings>) => void;
 };
 
-export const useUiStore = create<UiStore>((set: any) => ({
+export const useUiStore = create<UiStore>((set: (patch: Partial<UiStore> | ((s: UiStore) => Partial<UiStore>)) => void) => ({
   contentType: "text",
   appearance: DEFAULT_APPEARANCE,
-  setContentType: (v: any) => set({ contentType: v }),
+  setContentType: (v: UiStore["contentType"]) => set({ contentType: v }),
   patchAppearance: (p: Partial<AppearanceSettings>) =>
-    set((s: any) => {
+    set((s: UiStore) => {
       const next = { ...s.appearance, ...p };
       lsSetJSON(APPEARANCE_STORAGE_KEY, next);
       return { appearance: next };

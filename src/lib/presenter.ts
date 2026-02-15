@@ -50,9 +50,11 @@ export type Appearance = {
   };
 };
 
+import type { ScriptDoc } from "../types";
+
 type OpenOpts = {
   screen: ScreenInfo;
-  docs?: any[];
+  docs?: ScriptDoc[];
   activeDocId?: string | null;
   appearance?: Appearance;
   presenterWindowRef?: { current: Window | null } | null | undefined;
@@ -63,7 +65,7 @@ type OpenOpts = {
 type PresenterInitMessage = {
   type: "presenter-init";
   docId: string | null | undefined;
-  doc: any | null;
+  doc: ScriptDoc | null;
   appearance: {
     fontSize?: number;
     sideMargins: number;
@@ -158,8 +160,7 @@ function normalizePresenterAppearance(
     showOverlay: Boolean(
       p?.showOverlay ?? defaultPresenterAppearance.showOverlay,
     ),
-    overlayShape:
-      (p?.overlayShape as any) ?? defaultPresenterAppearance.overlayShape,
+    overlayShape: p?.overlayShape ?? defaultPresenterAppearance.overlayShape,
     overlayColor: p?.overlayColor ?? defaultPresenterAppearance.overlayColor,
     overlayOpacity:
       typeof p?.overlayOpacity === "number"
@@ -176,7 +177,7 @@ function normalizePresenterAppearance(
   };
 }
 
-function findActiveDoc(docs: any[] | undefined, activeDocId?: string | null) {
+function findActiveDoc(docs: ScriptDoc[] | undefined, activeDocId?: string | null) {
   if (!docs?.length || !activeDocId) return null;
   return docs.find((d) => d?.id === activeDocId) ?? null;
 }

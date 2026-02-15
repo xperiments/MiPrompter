@@ -1,6 +1,38 @@
 import { useRef, useEffect } from "react";
 import { ScriptDoc } from "../types";
 
+/* Minimal SpeechRecognition-like typings used by the app — avoids `any` casts. */
+type SpeechRecognitionAlternative = { transcript: string; confidence?: number };
+type SpeechRecognitionResultLike = {
+  0: SpeechRecognitionAlternative;
+  isFinal: boolean;
+  length: number;
+  [index: number]: SpeechRecognitionAlternative;
+};
+type SpeechRecognitionEventLike = { results: SpeechRecognitionResultLike[] };
+type SpeechRecognitionErrorEventLike = { error?: string | unknown };
+
+type SpeechRecognitionLike = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  processLocally?: boolean;
+  // internal runtime flag used by the hook (not part of browser API)
+  ___isListening?: boolean;
+  onresult: ((ev: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((ev: SpeechRecognitionErrorEventLike) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort?: () => void;
+};
+
+type SpeechRecognitionConstructor = {
+  new (): SpeechRecognitionLike;
+  available?: (opts: { langs: string[]; processLocally?: boolean }) => Promise<string>;
+  install?: (opts: { langs: string[]; processLocally?: boolean }) => Promise<boolean>;
+};
+
 type Token = {
   id: string;
   text: string;
@@ -91,7 +123,7 @@ export function useAppSpeechControl(
     onRestartDocument?: () => void;
   },
 ) {
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const tokensRef = useRef<Token[]>([]);
 
   // Cache of on-device status per language so UI can query quickly
@@ -99,9 +131,8 @@ export function useAppSpeechControl(
 
   // Public helpers (returned from the hook)
   const checkOnDevice = async (lang: string): Promise<string> => {
-    const SR =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
+    const winWithSR = window as unknown as { SpeechRecognition?: SpeechRecognitionConstructor; webkitSpeechRecognition?: SpeechRecognitionConstructor };
+    const SR = winWithSR.SpeechRecognition ?? winWithSR.webkitSpeechRecognition;
     if (!SR || typeof SR.available !== "function") return "unsupported";
     try {
       const status = await SR.available({
@@ -118,9 +149,8 @@ export function useAppSpeechControl(
   };
 
   const installOnDevice = async (lang: string): Promise<boolean> => {
-    const SR =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
+    const winWithSR = window as unknown as { SpeechRecognition?: SpeechRecognitionConstructor; webkitSpeechRecognition?: SpeechRecognitionConstructor };
+    const SR = winWithSR.SpeechRecognition ?? winWithSR.webkitSpeechRecognition;
     if (!SR || typeof SR.install !== "function") return false;
     try {
       const ok = await SR.install({ langs: [lang], processLocally: true });
@@ -196,9 +226,8 @@ export function useAppSpeechControl(
   }, [activeDoc, preserveFormatting]);
 
   useEffect(() => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
+    const winWithSR = window as unknown as { SpeechRecognition?: SpeechRecognitionConstructor; webkitSpeechRecognition?: SpeechRecognitionConstructor };
+    const SpeechRecognition = winWithSR.SpeechRecognition ?? winWithSR.webkitSpeechRecognition;
     if (!SpeechRecognition) return;
 
     // prefer local processing when the language pack is available
@@ -224,13 +253,12 @@ export function useAppSpeechControl(
     if (isOnDeviceAvailable(language)) recognition.processLocally = true;
     else recognition.processLocally = true; // still set — platform may still prefer local if possible
 
-    recognition.onerror = (event: any) => {
+    recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
       console.error("[SpeechControl] Error:", event?.error);
     };
 
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event: SpeechRecognitionEventLike) => {
       // ✅ IMPORTANT: do NOT concatenate everything (causes time travel)
-      console.log("[SpeechControl] Result event:", event);
       const last = event.results[event.results.length - 1];
       const transcript = String(last?.[0]?.transcript ?? "");
       const spokenWordsRaw = transcript

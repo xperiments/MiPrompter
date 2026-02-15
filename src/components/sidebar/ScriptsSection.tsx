@@ -28,7 +28,7 @@ function ScriptsSection({
     <SidebarSection title="Scripts" defaultOpen icon="text-align-left">
       <div className="space-y-3">
         <ScriptList
-          items={scripts as any}
+          items={scripts}
           activeId={activeScriptId}
           onSelect={onSelectScript}
           onAdd={onAddScript}

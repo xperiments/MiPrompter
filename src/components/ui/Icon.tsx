@@ -58,7 +58,7 @@ export type IconProps = Omit<React.HTMLAttributes<HTMLElement>, 'children'> & {
   className?: string;
 };
 
-export function Icon({ name, size, width, height, title, className, ...rest }: IconProps) {
+export const Icon = React.memo(function Icon({ name, size, width, height, title, className, ...rest }: IconProps) {
   const raw = SVG_CONTENTS[name];
   if (raw) {
     let svg = raw;
@@ -83,8 +83,7 @@ export function Icon({ name, size, width, height, title, className, ...rest }: I
   }
 
   // fallback: placeholder box
-  // eslint-disable-next-line no-console
-  console.warn(`Icon: unknown icon name "${name}" — rendering fallback.`);
+  if (import.meta.env.DEV) console.warn(`Icon: unknown icon name "${name}" — rendering fallback.`);
   const fbSize = size ?? width ?? height ?? "100%";
   return (
     <svg
@@ -94,13 +93,13 @@ export function Icon({ name, size, width, height, title, className, ...rest }: I
       role={title ? "img" : undefined}
       aria-hidden={title ? undefined : true}
       className={className}
-      {...(rest as any)}
+      {...(rest as React.SVGAttributes<SVGSVGElement>)}
     >
       {title ? <title>{title}</title> : null}
       <rect x={3} y={3} width={18} height={18} rx={3} fill="currentColor" opacity={0.12} />
       <text x="50%" y="55%" textAnchor="middle" fontSize={10} fill="currentColor">?</text>
     </svg>
   );
-}
+});
 
 export default Icon;

@@ -1,4 +1,32 @@
-export type PresenterSender = (msg: any) => boolean;
+import type { ScriptDoc, PresenterAppearance } from "../types";
+
+// Discriminated union of the most-common presenter messages used across the app
+export type PresenterMessage =
+  | { type: "play" }
+  | { type: "pause" }
+  | { type: "presenter-goto-chapter"; chapterId: string }
+  | { type: "set-word-index"; index: number }
+  | {
+      type: "set-params";
+      docId?: string | null;
+      micDeviceId?: string | null;
+      appearance?: Partial<PresenterAppearance>;
+    }
+  | { type: "presenter-load-doc"; doc: ScriptDoc | null }
+  | { type: "presenter-init"; docId?: string | null; doc?: ScriptDoc | null; appearance?: Partial<PresenterAppearance> }
+  | { type: "update-chapter"; chapterId: string; text: string }
+  | { type: "presenter-voice-commands"; config: unknown | null }
+  | { type: "prompter-reset" }
+  // messages emitted by presenter -> controller (kept here for handler typing)
+  | { type: "presenter-ready" }
+  | { type: "presenter-playing"; playing: boolean }
+  | { type: "presenter-mic"; active: boolean }
+  | { type: "presenter-word-index"; index: number }
+  | { type: "presenter-chapter-loaded"; docId?: string | null; chapterId?: string | null }
+  // fallback for messages not yet enumerated
+  | ({ type: string } & Record<string, unknown>);
+
+export type PresenterSender = (msg: PresenterMessage) => boolean;
 
 let _presenterWsSender: PresenterSender | null = null;
 
@@ -14,7 +42,7 @@ export function setPresenterWsSender(s: PresenterSender | null) {
  * Send a message to the presenter via the registered WS sender (if any).
  * Returns true when a sender exists and the send was attempted.
  */
-export function sendToPresenterViaWs(msg: any): boolean {
+export function sendToPresenterViaWs(msg: PresenterMessage): boolean {
   try {
     if (!_presenterWsSender) return false;
     return Boolean(_presenterWsSender(msg));

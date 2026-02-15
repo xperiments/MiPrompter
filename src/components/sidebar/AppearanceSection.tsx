@@ -6,12 +6,14 @@ import { Segmented } from "../ui/Segmented";
 import { Toggle } from "../ui/Toggle";
 import { ToggleRow } from "../ui/ToggleRow";
 
-type PresenterShape = any;
+import type { PresenterAppearance } from '../../types';
+
+type PresenterShape = Partial<PresenterAppearance>; 
 
 type Props = {
   presenter: PresenterShape;
   presenterPreview: Partial<PresenterShape> | null;
-  setPresenterPreview: (p: Partial<PresenterShape> | null) => void;
+  setPresenterPreview: React.Dispatch<React.SetStateAction<Partial<PresenterShape> | null>>;
   handleAlignmentChange: (v: string) => void;
   handleSliderChange: (k: keyof PresenterShape) => (v: number) => void;
   handleToggle: (k: keyof PresenterShape) => (v: boolean) => void;

@@ -25,7 +25,7 @@ export default function PairedDeviceList({
   ) => () => void;
   scripts?: ScriptDoc[];
   activeScriptId?: string;
-  appearance?: Record<string, any>;
+  appearance?: Record<string, unknown>;
 }) {
   type Paired = {
     id: string;
@@ -84,7 +84,7 @@ export default function PairedDeviceList({
   // announce paired devices to the rest of the UI (Composer will listen)
   useEffect(() => {
     try {
-      (window as any).__smui_pairedDevices = paired;
+      window.__smui_pairedDevices = paired;
       window.dispatchEvent(new CustomEvent(EVT_PAIRED_DEVICES, { detail: paired }));
     } catch (_) {
       /* ignore */
@@ -158,32 +158,33 @@ export default function PairedDeviceList({
     });
 
     ws.addEventListener("message", (ev) => {
-      let msg: any = null;
+      let raw: unknown = null;
       try {
-        msg = JSON.parse(ev.data);
-      } catch (err) {
+        raw = JSON.parse(ev.data) as unknown;
+      } catch {
         return;
       }
+      const rec = raw as Record<string, unknown>;
 
-      if (msg?.type === "signal" && msg.data) {
+      if (rec.type === "signal" && rec.data) {
         window.dispatchEvent(
           new MessageEvent("message", {
-            data: msg.data,
+            data: rec.data,
             origin: window.location.origin,
           }),
         );
       }
 
-      if (msg?.type === "pair-request" && msg.id) {
-        const id = String(msg.id);
-        const info = msg.info || {};
-        const label = info?.name || (info?.ua ? info.ua.split(" ")[0] : `Device ${id.slice(0, 4)}`);
+      if (rec.type === "pair-request" && typeof rec.id === "string") {
+        const id = String(rec.id);
+        const info = (rec.info ?? {}) as Record<string, unknown>;
+        const label = typeof info.name === "string" ? info.name : typeof info.ua === "string" ? info.ua.split(" ")[0] : `Device ${id.slice(0, 4)}`;
         const next: Paired[] = [
           {
             id,
             label,
-            ua: info?.ua,
-            screen: info?.screen,
+            ua: typeof info.ua === "string" ? info.ua : undefined,
+            screen: info.screen as Paired['screen'] | undefined,
             createdAt: Date.now(),
             lastSeen: Date.now(),
           },
@@ -194,15 +195,16 @@ export default function PairedDeviceList({
         return;
       }
 
-      if (msg?.type === "signal" && msg.data?.type === "request-state") {
+      if ((rec.type === "signal") && ((rec.data as Record<string, unknown>)?.type === "request-state")) {
         try {
           const activeDoc = scriptsRef.current?.find((s) => s.id === activeScriptIdRef.current) ?? null;
-          ws.send(JSON.stringify({ type: "signal", room: msg.room || "smui-default", data: { type: "presenter-load-doc", doc: activeDoc } }));
-          ws.send(JSON.stringify({ type: "signal", room: msg.room || "smui-default", data: { type: "set-params", docId: activeScriptIdRef.current ?? null, appearance: appearanceRef.current } }));
+          const room = (rec.room as string) || "smui-default";
+          ws.send(JSON.stringify({ type: "signal", room, data: { type: "presenter-load-doc", doc: activeDoc } }));
+          ws.send(JSON.stringify({ type: "signal", room, data: { type: "set-params", docId: activeScriptIdRef.current ?? null, appearance: appearanceRef.current } }));
 
           const firstChapterId = activeDoc?.chapters?.[0]?.id ?? null;
           if (firstChapterId) {
-            ws.send(JSON.stringify({ type: "signal", room: msg.room || "smui-default", data: { type: "presenter-goto-chapter", chapterId: firstChapterId } }));
+            ws.send(JSON.stringify({ type: "signal", room, data: { type: "presenter-goto-chapter", chapterId: firstChapterId } }));
           }
         } catch (err) {
           /* ignore */
@@ -321,18 +323,19 @@ export default function PairedDeviceList({
     ws?.send(JSON.stringify({ type: "offer", sdp: offer.sdp }));
 
     const onWsMessage = (ev: MessageEvent) => {
-      const msg = JSON.parse(ev.data);
-      if (msg?.type === "signal" && msg.data) {
-        window.postMessage(msg.data, window.location.origin);
+      const raw = JSON.parse(ev.data) as unknown;
+      const msg = raw as Record<string, unknown>;
+      if (msg.type === "signal" && msg.data) {
+        window.postMessage(msg.data as unknown, window.location.origin);
         return;
       }
 
-      if (msg?.type === "state" && msg.data) {
-        const d = msg.data as any;
-        if (d.payload) window.postMessage({ type: "presenter-init", ...d.payload }, window.location.origin);
-        if (typeof d.playing === "boolean") window.postMessage({ type: "presenter-playing", playing: d.playing }, window.location.origin);
-        if (typeof d.mic === "boolean") window.postMessage({ type: "presenter-mic", active: d.mic }, window.location.origin);
-        if (typeof d.wordIndex === "number") window.postMessage({ type: "presenter-word-index", index: d.wordIndex }, window.location.origin);
+      if (msg.type === "state" && msg.data) {
+        const d = (msg.data ?? {}) as Record<string, unknown>;
+        if (d.payload) window.postMessage({ type: "presenter-init", ...(d.payload as Record<string, unknown>) }, window.location.origin);
+        if (typeof d.playing === "boolean") window.postMessage({ type: "presenter-playing", playing: d.playing as boolean }, window.location.origin);
+        if (typeof d.mic === "boolean") window.postMessage({ type: "presenter-mic", active: d.mic as boolean }, window.location.origin);
+        if (typeof d.wordIndex === "number") window.postMessage({ type: "presenter-word-index", index: d.wordIndex as number }, window.location.origin);
         return;
       }
 

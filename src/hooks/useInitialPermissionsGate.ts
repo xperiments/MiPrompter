@@ -25,17 +25,19 @@ export function useInitialPermissionsGate() {
         let micGranted = false;
         let camGranted = false;
         try {
-          const mp = await (navigator.permissions as any).query?.({
-            name: "microphone",
-          });
+          let mp: PermissionStatus | undefined;
+          if (navigator.permissions && typeof navigator.permissions.query === 'function') {
+            mp = await navigator.permissions.query({ name: "microphone" as PermissionName });
+          }
           micGranted = mp?.state === "granted";
         } catch (_) {
           micGranted = false;
         }
         try {
-          const vp = await (navigator.permissions as any).query?.({
-            name: "camera",
-          });
+          let vp: PermissionStatus | undefined;
+          if (navigator.permissions && typeof navigator.permissions.query === 'function') {
+            vp = await navigator.permissions.query({ name: "camera" as PermissionName });
+          }
           camGranted = vp?.state === "granted";
         } catch (_) {
           camGranted = false;
@@ -58,11 +60,11 @@ export function useInitialPermissionsGate() {
       document.removeEventListener("pointerdown", onFirstGesture, true);
 
       const micPromise = (async () => {
-        let p: any | undefined;
+        let p: PermissionStatus | undefined;
         try {
-          p = await (navigator.permissions as any).query({
-            name: "microphone",
-          });
+          if (navigator.permissions && typeof navigator.permissions.query === 'function') {
+            p = await navigator.permissions.query({ name: "microphone" as PermissionName });
+          }
         } catch {
           p = undefined;
         }
@@ -72,9 +74,11 @@ export function useInitialPermissionsGate() {
       })();
 
       const camPromise = (async () => {
-        let p: any | undefined;
+        let p: PermissionStatus | undefined;
         try {
-          p = await (navigator.permissions as any).query({ name: "camera" });
+          if (navigator.permissions && typeof navigator.permissions.query === 'function') {
+            p = await navigator.permissions.query({ name: "camera" as PermissionName });
+          }
         } catch {
           p = undefined;
         }
@@ -84,9 +88,9 @@ export function useInitialPermissionsGate() {
       })();
 
       const screenPromise = (async () => {
-        const gd = (window as any).getScreenDetails;
+        const gd = (window as unknown as { getScreenDetails?: () => Promise<unknown> }).getScreenDetails;
         if (typeof gd === "function") {
-          (gd as any)().catch(() => {});
+          gd().catch(() => {});
         }
       })();
 
@@ -113,12 +117,12 @@ export function useInitialPermissionsGate() {
     e.stopPropagation();
     e.preventDefault();
 
-    const x = (e as any).clientX ?? window.innerWidth / 2;
-    const y = (e as any).clientY ?? window.innerHeight / 2;
+    const x = e.clientX ?? window.innerWidth / 2;
+    const y = e.clientY ?? window.innerHeight / 2;
 
     getAudioVideoStream().catch(() => {});
 
-    (window as any).getScreenDetails?.().catch(() => {});
+    (window as unknown as { getScreenDetails?: () => Promise<unknown> }).getScreenDetails?.().catch(() => {});
 
     ls.setRaw(INITIAL_PERMISSIONS_KEY, "1");
 

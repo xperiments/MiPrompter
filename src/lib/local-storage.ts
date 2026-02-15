@@ -31,7 +31,7 @@ export function lsRemove(key: string): void {
   }
 }
 
-export function lsGetJSON<T = any>(key: string, fallback: T | null = null): T | null {
+export function lsGetJSON<T = unknown>(key: string, fallback: T | null = null): T | null {
   const raw = lsGet(key);
   if (raw == null) return fallback;
   try {

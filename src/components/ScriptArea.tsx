@@ -56,6 +56,85 @@ export const ScriptArea = React.forwardRef<
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const innerRef = React.useRef<HTMLDivElement | null>(null);
 
+  // cache stable per-chapter handlers to avoid recreating closures on every render.
+  // Handlers call latest props via `propsRef` so they stay correct across prop updates.
+  const propsRef = React.useRef(props);
+  propsRef.current = props;
+  const handlerCacheRef = React.useRef({
+    onChange: new Map<string, (t: string) => void>(),
+    onAddAfter: new Map<string, (t?: string) => void>(),
+    onAddBefore: new Map<string, () => void>(),
+    onDelete: new Map<string, () => void>(),
+    onSplit: new Map<string, (a: string, b: string) => void>(),
+    onGoto: new Map<string, () => void>(),
+  });
+
+  function getOnChange(id: string) {
+    const m = handlerCacheRef.current.onChange;
+    let fn = m.get(id);
+    if (!fn) {
+      fn = (text: string) => propsRef.current.onChangeChapter(id, text);
+      m.set(id, fn);
+    }
+    return fn;
+  }
+  function getOnAddAfter(id: string) {
+    const m = handlerCacheRef.current.onAddAfter;
+    let fn = m.get(id);
+    if (!fn) {
+      fn = (text?: string) => {
+        const newId = propsRef.current.onAddChapter(id, text);
+        if (newId) setFocusedChapterId(String(newId));
+      };
+      m.set(id, fn);
+    }
+    return fn;
+  }
+  function getOnAddBefore(id: string) {
+    const m = handlerCacheRef.current.onAddBefore;
+    let fn = m.get(id);
+    if (!fn) {
+      fn = () => {
+        const newId = propsRef.current.onAddChapterBefore(id);
+        if (newId) setFocusedChapterId(String(newId));
+      };
+      m.set(id, fn);
+    }
+    return fn;
+  }
+  function getOnDelete(id: string) {
+    const m = handlerCacheRef.current.onDelete;
+    let fn = m.get(id);
+    if (!fn) {
+      fn = () => propsRef.current.onRemoveChapter(id);
+      m.set(id, fn);
+    }
+    return fn;
+  }
+  function getOnSplit(id: string) {
+    const m = handlerCacheRef.current.onSplit;
+    let fn = m.get(id);
+    if (!fn) {
+      fn = (before: string, remainder: string) => {
+        const newId = propsRef.current.onSplitChapter
+          ? propsRef.current.onSplitChapter(id, before, remainder)
+          : propsRef.current.onAddChapter(id, remainder);
+        if (newId) setFocusedChapterId(String(newId));
+      };
+      m.set(id, fn);
+    }
+    return fn;
+  }
+  function getOnGoto(id: string) {
+    const m = handlerCacheRef.current.onGoto;
+    let fn = m.get(id);
+    if (!fn) {
+      fn = () => propsRef.current.onGotoChapter?.(id);
+      m.set(id, fn);
+    }
+    return fn;
+  }
+
   // When the editor column itself is using the maximum available space (e.g. sidebar collapsed)
   // allow the content area to grow beyond the legacy 900px cap. Detect container width and
   // remove the hard cap when there's enough room so the Width slider can expand the content.
@@ -237,25 +316,13 @@ export const ScriptArea = React.forwardRef<
                       onDragOver={(e) => onDragOver(c.id, e)}
                       onDrop={(e) => onDrop(c.id, e)}
                       onDragEnd={onDragEnd}
-                      onChange={(text) => props.onChangeChapter(c.id, text)}
+                      onChange={getOnChange(c.id)}
                       fontSize={props.contentFontSize}
-                      onAddAfter={(text) => {
-                        const newId = props.onAddChapter(c.id, text);
-                        if (newId) setFocusedChapterId(String(newId));
-                      }}
-                      onAddBefore={() => {
-                        const newId = props.onAddChapterBefore(c.id);
-                        if (newId) setFocusedChapterId(String(newId));
-                      }}
-                      onDelete={() => props.onRemoveChapter(c.id)}
-                      onSplit={(before, remainder) => {
-                        // ask the app to perform an atomic split so undo can treat it as one action
-                        const newId = props.onSplitChapter
-                          ? props.onSplitChapter(c.id, before, remainder)
-                          : props.onAddChapter(c.id, remainder);
-                        if (newId) setFocusedChapterId(String(newId));
-                      }}
-                      onGoto={() => props.onGotoChapter?.(c.id)}
+                      onAddAfter={getOnAddAfter(c.id)}
+                      onAddBefore={getOnAddBefore(c.id)}
+                      onDelete={getOnDelete(c.id)}
+                      onSplit={getOnSplit(c.id)}
+                      onGoto={getOnGoto(c.id)}
                     />
                   ))}
                 </div>

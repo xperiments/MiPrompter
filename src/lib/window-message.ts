@@ -1,6 +1,6 @@
 import React from "react";
 
-export function useWindowMessages(onMessage: (m: any) => void) {
+export function useWindowMessages(onMessage: (m: unknown) => void) {
   React.useEffect(() => {
     const handler = (e: MessageEvent) => onMessage(e.data);
     window.addEventListener("message", handler);

@@ -1,12 +1,12 @@
 import { useEffect } from "react";
 import type { ScriptDoc, PresenterAppearance } from "../types";
-import { sendToPresenterViaWs } from "../lib/presenter-transport";
+import { sendToPresenterViaWs, type PresenterMessage } from "../lib/presenter-transport";
 import { EVT_WS_READY } from "../lib/keys";
 
 export interface UsePresenterSyncParams {
   presenterWindowRef?: React.RefObject<Window | null>;
   /** Optional centralized send API from usePresenterBridge().send */
-  send?: (msg: any) => boolean;
+  send?: (msg: PresenterMessage) => boolean;
   activeScriptId: string | null;
   scripts: ScriptDoc[];
   presenterDisplayedDocRef?: React.MutableRefObject<string | null>;
@@ -119,22 +119,25 @@ export function updatePresenterWindow(
 
   // Separate appearance properties from other properties
   const { micDeviceId, docId, ...appearanceProps } = updates;
-  const message: any = { type: "set-params" };
+  const paramsMsg: Extract<PresenterMessage, { type: "set-params" }> = {
+    type: "set-params",
+    ...(Object.keys(appearanceProps).length > 0
+      ? { appearance: appearanceProps as Partial<PresenterAppearance> }
+      : {}),
+  };
 
-  if (micDeviceId !== undefined) message.micDeviceId = micDeviceId;
-  if (docId !== undefined) message.docId = docId;
-  if (Object.keys(appearanceProps).length > 0)
-    message.appearance = appearanceProps;
+  if (micDeviceId !== undefined) paramsMsg.micDeviceId = micDeviceId;
+  if (docId !== undefined) paramsMsg.docId = docId;
 
   let posted = false;
   if (win && !win.closed) {
-    win.postMessage(message, window.location.origin);
+    win.postMessage(paramsMsg, window.location.origin);
     posted = true;
   }
 
   // If WS transport is available, send there as well (covers phone presenters)
 
-  const sent = sendToPresenterViaWs(message);
+  const sent = sendToPresenterViaWs(paramsMsg);
   // If neither delivered, silently fail (existing behaviour)
   posted = posted || sent;
 

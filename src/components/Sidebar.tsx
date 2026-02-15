@@ -7,14 +7,14 @@ import React, {
 } from "react";
 import QRCode from "qrcode";
 
-import type { ScriptDoc, AppearanceSettings } from "../types";
+import type { ScriptDoc, AppearanceSettings, PresenterAppearance } from "../types";
 import { SidebarSection } from "./sidebar/SidebarSection";
 import { Select } from "./ui/Select";
 import { SliderRow } from "./ui/SliderRow";
 
 import { ToggleRow } from "./ui/ToggleRow";
 import { ScriptList } from "./sidebar/ScriptList";
-import { useUiStore } from "../stores/ui";
+import { useUiStore, type UiStore } from "../stores/ui";
 import { useScreenDetection } from "../hooks/useScreenDetection";
 import { useMicrophoneDetection } from "../hooks/useMicrophoneDetection";
 import { useCameraDetection } from "../hooks/useCameraDetection";
@@ -24,6 +24,69 @@ import {
   updatePresenterWindow,
 } from "../hooks/usePresenterSync";
 import { APPEARANCE_STORAGE_KEY, SCRIPTS_STORAGE_KEY, VOICE_COMMANDS_KEY, EVT_OPEN_SIDEBAR_SECTION } from "../lib/keys";
+
+// language options shared between components (hoisted for perf)
+const LANG_OPTIONS = [
+  { value: "en-US", label: "English (US)" },
+  { value: "en-GB", label: "English (UK)" },
+  { value: "en-AU", label: "English (Australia)" },
+  { value: "en-CA", label: "English (Canada)" },
+  { value: "en-IN", label: "English (India)" },
+  { value: "en-NZ", label: "English (New Zealand)" },
+  { value: "en-IE", label: "English (Ireland)" },
+  { value: "en-SG", label: "English (Singapore)" },
+  { value: "en-ZA", label: "English (South Africa)" },
+  { value: "en-PH", label: "English (Philippines)" },
+
+  { value: "es-ES", label: "Español (España)" },
+  { value: "es-MX", label: "Español (México)" },
+  { value: "es-AR", label: "Español (Argentina)" },
+  { value: "es-CO", label: "Español (Colombia)" },
+  { value: "es-PE", label: "Español (Perú)" },
+  { value: "es-VE", label: "Español (Venezuela)" },
+  { value: "es-CL", label: "Español (Chile)" },
+  { value: "es-US", label: "Español (USA)" },
+  { value: "es-EC", label: "Español (Ecuador)" },
+  { value: "es-BO", label: "Español (Bolivia)" },
+  { value: "es-DO", label: "Español (Rep. Dominicana)" },
+  { value: "es-GT", label: "Español (Guatemala)" },
+  { value: "es-HN", label: "Español (Honduras)" },
+  { value: "es-NI", label: "Español (Nicaragua)" },
+  { value: "es-PA", label: "Español (Panamá)" },
+  { value: "es-PR", label: "Español (Puerto Rico)" },
+  { value: "es-PY", label: "Español (Paraguay)" },
+  { value: "es-SV", label: "Español (El Salvador)" },
+  { value: "es-UY", label: "Español (Uruguay)" },
+  { value: "es-CR", label: "Español (Costa Rica)" },
+
+  { value: "zh-CN", label: "中文 (简体)" },
+  { value: "zh-TW", label: "中文 (繁體)" },
+  { value: "hi-IN", label: "हिन्दी (India)" },
+  { value: "fr-FR", label: "Français (France)" },
+  { value: "fr-CA", label: "Français (Canada)" },
+  { value: "fr-BE", label: "Français (Belgique)" },
+  { value: "fr-CH", label: "Français (Suisse)" },
+  { value: "fr-LU", label: "Français (Luxembourg)" },
+  { value: "pt-BR", label: "Português (Brasil)" },
+  { value: "pt-PT", label: "Português (Portugal)" },
+  { value: "pt-AO", label: "Português (Angola)" },
+  { value: "pt-MZ", label: "Português (Moçambique)" },
+  { value: "de-DE", label: "Deutsch (Deutschland)" },
+  { value: "de-AT", label: "Deutsch (Österreich)" },
+  { value: "de-CH", label: "Deutsch (Schweiz)" },
+  { value: "de-LU", label: "Deutsch (Luxemburg)" },
+  { value: "de-LI", label: "Deutsch (Liechtenstein)" },
+  { value: "ja-JP", label: "日本語 (日本)" },
+  { value: "ko-KR", label: "한국어 (대한민국)" },
+  { value: "it-IT", label: "Italiano (Italia)" },
+  { value: "it-CH", label: "Italiano (Svizzera)" },
+  { value: "ru-RU", label: "Русский (Россия)" },
+  { value: "vi-VN", label: "Tiếng Việt (Việt Nam)" },
+  { value: "tr-TR", label: "Türkçe (Türkiye)" },
+  { value: "id-ID", label: "Bahasa Indonesia" },
+  { value: "pl-PL", label: "Polski (Polska)" },
+  { value: "th-TH", label: "ไทย (ประเทศไทย)" },
+];
 
 /* extracted sidebar subcomponents */
 import ScriptsSection from "./sidebar/ScriptsSection";
@@ -84,7 +147,7 @@ export interface SidebarProps {
 }
 
 export function Sidebar(props: SidebarProps) {
-  const patchAppearance = useUiStore((state: any) => state.patchAppearance);
+  const patchAppearance = useUiStore((state: UiStore) => state.patchAppearance);
   const [lastDevice, setLastDevice] = React.useState<string | null>(null);
   // Custom hooks for device management
   const screens = useScreenDetection();
@@ -163,10 +226,10 @@ export function Sidebar(props: SidebarProps) {
   });
 
   // Memoize presenter config from localStorage
-  const presenter = useMemo(() => {
-    const stored = ls.getJSON<Record<string, any>>(APPEARANCE_STORAGE_KEY, null);
-    if (stored) return stored.presenter || {};
-    return props.appearance?.presenter || {};
+const presenter = useMemo((): Partial<PresenterAppearance> => {
+    const stored = ls.getJSON<Record<string, unknown>>(APPEARANCE_STORAGE_KEY, null);
+    if (stored) return (stored.presenter as Partial<PresenterAppearance> | undefined) || {};
+    return (props.appearance?.presenter as Partial<PresenterAppearance>) || {};
   }, [props.appearance, ls]);
 
   // Local preview state for sliders that need immediate, optimistic feedback
@@ -216,8 +279,8 @@ export function Sidebar(props: SidebarProps) {
 
   // Update appearance helper
   const updatePresenterAppearance = useCallback(
-    (updates: Partial<typeof presenter>) => {
-      const newPresenter = { ...presenter, ...updates };
+    (updates: Partial<PresenterAppearance> & { micDeviceId?: string | null }) => {
+      const newPresenter = { ...presenter, ...updates } as Partial<PresenterAppearance>;
 
       if (props.updateAppearance) {
         props.updateAppearance({ presenter: newPresenter });
@@ -299,97 +362,7 @@ export function Sidebar(props: SidebarProps) {
     [props.setVoiceCommands, props.voiceCommands, props.presenterWindowRef, ls],
   );
 
-  // language options shared between the Select and the status list
-  const LANG_OPTIONS = [
-    // English (375M+ speakers)
-    { value: "en-US", label: "English (US)" },
-    { value: "en-GB", label: "English (UK)" },
-    { value: "en-AU", label: "English (Australia)" },
-    { value: "en-CA", label: "English (Canada)" },
-    { value: "en-IN", label: "English (India)" },
-    { value: "en-NZ", label: "English (New Zealand)" },
-    { value: "en-IE", label: "English (Ireland)" },
-    { value: "en-SG", label: "English (Singapore)" },
-    { value: "en-ZA", label: "English (South Africa)" },
-    { value: "en-PH", label: "English (Philippines)" },
-
-    // Spanish (500M+ speakers)
-    { value: "es-ES", label: "Español (España)" },
-    { value: "es-MX", label: "Español (México)" },
-    { value: "es-AR", label: "Español (Argentina)" },
-    { value: "es-CO", label: "Español (Colombia)" },
-    { value: "es-PE", label: "Español (Perú)" },
-    { value: "es-VE", label: "Español (Venezuela)" },
-    { value: "es-CL", label: "Español (Chile)" },
-    { value: "es-US", label: "Español (USA)" },
-    { value: "es-EC", label: "Español (Ecuador)" },
-    { value: "es-BO", label: "Español (Bolivia)" },
-    { value: "es-DO", label: "Español (Rep. Dominicana)" },
-    { value: "es-GT", label: "Español (Guatemala)" },
-    { value: "es-HN", label: "Español (Honduras)" },
-    { value: "es-NI", label: "Español (Nicaragua)" },
-    { value: "es-PA", label: "Español (Panamá)" },
-    { value: "es-PR", label: "Español (Puerto Rico)" },
-    { value: "es-PY", label: "Español (Paraguay)" },
-    { value: "es-SV", label: "Español (El Salvador)" },
-    { value: "es-UY", label: "Español (Uruguay)" },
-    { value: "es-CR", label: "Español (Costa Rica)" },
-
-    // Mandarin Chinese (918M+ speakers)
-    { value: "zh-CN", label: "中文 (简体)" },
-    { value: "zh-TW", label: "中文 (繁體)" },
-
-    // Hindi (345M+ speakers)
-    { value: "hi-IN", label: "हिन्दी (India)" },
-
-    // French (280M+ speakers)
-    { value: "fr-FR", label: "Français (France)" },
-    { value: "fr-CA", label: "Français (Canada)" },
-    { value: "fr-BE", label: "Français (Belgique)" },
-    { value: "fr-CH", label: "Français (Suisse)" },
-    { value: "fr-LU", label: "Français (Luxembourg)" },
-
-    // Portuguese (252M+ speakers)
-    { value: "pt-BR", label: "Português (Brasil)" },
-    { value: "pt-PT", label: "Português (Portugal)" },
-    { value: "pt-AO", label: "Português (Angola)" },
-    { value: "pt-MZ", label: "Português (Moçambique)" },
-
-    // German (131M+ speakers)
-    { value: "de-DE", label: "Deutsch (Deutschland)" },
-    { value: "de-AT", label: "Deutsch (Österreich)" },
-    { value: "de-CH", label: "Deutsch (Schweiz)" },
-    { value: "de-LU", label: "Deutsch (Luxemburg)" },
-    { value: "de-LI", label: "Deutsch (Liechtenstein)" },
-
-    // Japanese (125M+ speakers)
-    { value: "ja-JP", label: "日本語 (日本)" },
-
-    // Korean (82M+ speakers)
-    { value: "ko-KR", label: "한국어 (대한민국)" },
-
-    // Italian (85M+ speakers)
-    { value: "it-IT", label: "Italiano (Italia)" },
-    { value: "it-CH", label: "Italiano (Svizzera)" },
-
-    // Russian (162M+ speakers)
-    { value: "ru-RU", label: "Русский (Россия)" },
-
-    // Vietnamese (85M+ speakers)
-    { value: "vi-VN", label: "Tiếng Việt (Việt Nam)" },
-
-    // Turkish (88M+ speakers)
-    { value: "tr-TR", label: "Türkçe (Türkiye)" },
-
-    // Indonesian (43M+ speakers)
-    { value: "id-ID", label: "Bahasa Indonesia" },
-
-    // Polish (45M+ speakers)
-    { value: "pl-PL", label: "Polski (Polska)" },
-
-    // Thai (60M+ speakers)
-    { value: "th-TH", label: "ไทย (ประเทศไทย)" },
-  ];
+  // language options shared between the Select and the status list (hoisted)
 
   const [langStatuses, setLangStatuses] = React.useState<
     Record<string, string>
@@ -699,7 +672,7 @@ export function Sidebar(props: SidebarProps) {
             <Select
               value={presenter.overlayShape ?? "snap"}
               onChange={(v) =>
-                updatePresenterAppearance({ overlayShape: v as string })
+                updatePresenterAppearance({ overlayShape: v as PresenterAppearance['overlayShape'] })
               }
               options={[
                 { value: "circle", label: "Circle" },

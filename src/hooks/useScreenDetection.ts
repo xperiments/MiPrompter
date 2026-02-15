@@ -48,7 +48,32 @@ export function useScreenDetection() {
     setLoading(true);
 
     try {
-      const details = await (window as any).getScreenDetails?.();
+      type ScreenDetailsLike = {
+        screens: Array<{
+          left?: number;
+          top?: number;
+          width?: number;
+          height?: number;
+          availLeft?: number;
+          availTop?: number;
+          availWidth?: number;
+          availHeight?: number;
+          isPrimary?: boolean;
+          label?: string;
+        }>;
+        currentScreen?: {
+          left?: number;
+          top?: number;
+          width?: number;
+          height?: number;
+          availLeft?: number;
+          availTop?: number;
+          availWidth?: number;
+          availHeight?: number;
+        };
+      };
+
+      const details = await (window as unknown as { getScreenDetails?: () => Promise<ScreenDetailsLike> }).getScreenDetails?.();
 
       if (
         details?.screens &&
@@ -57,7 +82,7 @@ export function useScreenDetection() {
       ) {
         const current = details.currentScreen ?? null;
 
-        const list: ScreenInfo[] = details.screens.map((s: any, i: number) => {
+        const list: ScreenInfo[] = details.screens.map((s: ScreenDetailsLike['screens'][number], i: number) => {
           const left = Number(s.left ?? s.availLeft ?? 0);
           const top = Number(s.top ?? s.availTop ?? 0);
           const width = Number(s.width ?? s.availWidth ?? window.screen.width);
@@ -124,8 +149,8 @@ export function useScreenDetection() {
           selectedScreenLabel || (storedScreenRef.current ?? primaryLabel),
         );
       }
-    } catch (err: any) {
-      setError(String(err?.message ?? err ?? "Failed to enumerate screens"));
+    } catch (err: unknown) {
+      setError(String((err as Error)?.message ?? err ?? "Failed to enumerate screens"));
 
       // Fallback to primary screen on error
       const primaryLabel = getPrimaryScreenLabel();

@@ -15,7 +15,7 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
   navigator.serviceWorker.register('/sw.js').then((reg) => {
 
     // expose an activation helper so UI can trigger skipWaiting
-    (window as any).__smui_activateUpdate = async () => {
+    window.__smui_activateUpdate = async () => {
       const waiting = reg.waiting;
       if (waiting) {
         waiting.postMessage('skipWaiting');
@@ -42,9 +42,9 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
 }
 
 // Install prompt hook (expose deferred prompt for UI)
-window.addEventListener('beforeinstallprompt', (e: any) => {
-  e.preventDefault();
-  (window as any).__smui_deferredInstallPrompt = e;
+window.addEventListener('beforeinstallprompt', (e: Event) => {
+  (e as Event & { prompt?: () => Promise<void> })?.preventDefault?.();
+  window.__smui_deferredInstallPrompt = e as unknown;
   window.dispatchEvent(new CustomEvent(EVT_INSTALL_PROMPT_AVAILABLE));
   window.dispatchEvent(new CustomEvent(EVT_APP_INSTALLED));
 });
