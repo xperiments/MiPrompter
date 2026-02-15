@@ -2,7 +2,7 @@ import React from "react";
 
 // Load raw SVG source from `src/icons` and inline it so CSS (currentColor) can style fills/strokes.
 // Use Vite's import.meta.glob to eagerly load the files as raw strings.
-const rawModules = (import.meta.glob('../icons/*.svg', { as: 'raw', eager: true }) as Record<string, string>);
+const rawModules = (import.meta.glob('../../icons/*.svg', { as: 'raw', eager: true }) as Record<string, string>);
 
 function normalizeSvg(raw: string) {
   // remove XML comments

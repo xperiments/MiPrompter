@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { lsGet, lsSetJSON } from "../lib/local-storage";
 import type { ScriptDoc, ScriptChapter } from "../types";
 
-const STORAGE_KEY = "smui.scripts.v1";
+import { SCRIPTS_STORAGE_KEY } from "../lib/keys";
+const STORAGE_KEY = SCRIPTS_STORAGE_KEY;
 
 const seedDocs: ScriptDoc[] = [
   {

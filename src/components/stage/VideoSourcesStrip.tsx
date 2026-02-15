@@ -1,5 +1,5 @@
 import React from "react";
-import Icon from "./Icon";
+import Icon from "../Icon";
 import VideoSourceCard, { type VideoSource } from "./VideoSourceCard";
 
 type Props = {
@@ -19,7 +19,6 @@ export default function VideoSourcesStrip({
 }: Props) {
   return (
     <div className="flex gap-3 overflow-x-auto pb-2">
-      {/* Dummy "Share screen/window" card — prompts getDisplayMedia and adds a screen source to the stage */}
       <div
         role="button"
         tabIndex={0}

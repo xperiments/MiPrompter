@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from "react";
 import type { ScriptDoc } from "../../types";
 import { setPresenterWsSender } from "../../lib/presenter-transport";
 import { useScreenDetection } from "../../hooks/useScreenDetection";
-
+import { getBasicCameraStream } from "../../lib/media-devices";
+import { EVT_PAIRED_DEVICES, EVT_REQUEST_PAIRED_DEVICES, EVT_WS_READY, EVT_OPEN_REMOTE_DEVICE } from "../../lib/keys";
 export default function PairedDeviceList({
   presenterWindowRef,
   onOpenTeleprompter,
@@ -77,7 +78,6 @@ export default function PairedDeviceList({
 
   const save = (next: Paired[]) => {
     const normalized = next && next.length ? [next[0]] : [];
-    console.debug("PairedDeviceList: save ->", normalized.map((p) => p.id));
     setPaired(normalized);
   };
 
@@ -85,8 +85,7 @@ export default function PairedDeviceList({
   useEffect(() => {
     try {
       (window as any).__smui_pairedDevices = paired;
-      window.dispatchEvent(new CustomEvent("smui.paired-devices", { detail: paired }));
-      console.debug("PairedDeviceList: dispatch smui.paired-devices", paired.map((p) => p.id));
+      window.dispatchEvent(new CustomEvent(EVT_PAIRED_DEVICES, { detail: paired }));
     } catch (_) {
       /* ignore */
     }
@@ -96,15 +95,14 @@ export default function PairedDeviceList({
   useEffect(() => {
     const handleRequest = () => {
       try {
-        console.debug("PairedDeviceList: responding to smui.request-paired-devices", paired.map((p) => p.id));
-        window.dispatchEvent(new CustomEvent("smui.paired-devices", { detail: paired }));
+        window.dispatchEvent(new CustomEvent(EVT_PAIRED_DEVICES, { detail: paired }));
       } catch (_) {
         /* ignore */
       }
     };
 
-    window.addEventListener("smui.request-paired-devices", handleRequest as EventListener);
-    return () => window.removeEventListener("smui.request-paired-devices", handleRequest as EventListener);
+    window.addEventListener(EVT_REQUEST_PAIRED_DEVICES, handleRequest as EventListener);
+    return () => window.removeEventListener(EVT_REQUEST_PAIRED_DEVICES, handleRequest as EventListener);
   }, [paired]);
 
   useEffect(() => {
@@ -112,12 +110,10 @@ export default function PairedDeviceList({
 
     const proto = location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${proto}//${location.host}/ws`;
-    console.debug("PairedDeviceList: connecting to ws ->", wsUrl);
     let ws: WebSocket | null = null;
     try {
       ws = new WebSocket(wsUrl);
     } catch (err) {
-      console.debug("PairedDeviceList: WebSocket construction failed", err);
       ws = null;
     }
     wsRef.current = ws;
@@ -125,7 +121,6 @@ export default function PairedDeviceList({
     if (!ws) return;
 
     ws.addEventListener("open", () => {
-      console.debug("PairedDeviceList: ws open");
       try {
         ws.send(JSON.stringify({ type: "join", room: DEFAULT_WS_ROOM }));
       } catch (_) {}
@@ -154,23 +149,19 @@ export default function PairedDeviceList({
         // ask any connected presenters to re-announce themselves (covers controller reloads)
         try {
           ws.send(JSON.stringify({ type: "signal", room: DEFAULT_WS_ROOM, data: { type: "presenter-probe" } }));
-          console.debug("PairedDeviceList: sent presenter-probe");
         } catch (_) {
           /* ignore */
         }
 
-        window.dispatchEvent(new CustomEvent("smui.ws-ready"));
+        window.dispatchEvent(new CustomEvent(EVT_WS_READY));
       } catch (_) {}
     });
 
     ws.addEventListener("message", (ev) => {
-      console.debug("PairedDeviceList: ws message (raw)");
       let msg: any = null;
       try {
         msg = JSON.parse(ev.data);
-        console.debug("PairedDeviceList: ws message ->", msg.type || msg);
       } catch (err) {
-        console.debug("PairedDeviceList: ws message parse failed", err);
         return;
       }
 
@@ -220,7 +211,6 @@ export default function PairedDeviceList({
     });
 
     ws.addEventListener("close", (ev) => {
-      console.debug("PairedDeviceList: ws close", ev?.reason || ev);
       if (ws === wsRef.current) {
         wsRef.current = null;
         setPresenterWsSender(null);
@@ -228,7 +218,6 @@ export default function PairedDeviceList({
     });
 
     ws.addEventListener("error", (err) => {
-      console.debug("PairedDeviceList: ws error", err);
     });
 
     return () => {
@@ -318,7 +307,7 @@ export default function PairedDeviceList({
     dc.onmessage = () => {};
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      const stream = await getBasicCameraStream();
       for (const t of stream.getTracks()) pc.addTrack(t, stream);
     } catch (_) {
       /* ignore */
@@ -383,7 +372,7 @@ export default function PairedDeviceList({
       }
     } catch (_) {}
 
-    window.dispatchEvent(new CustomEvent("smui.ws-ready", { detail: { room: roomId } }));
+    window.dispatchEvent(new CustomEvent(EVT_WS_READY, { detail: { room: roomId } }));
 
     const cleanup = () => {
       ws?.removeEventListener("message", onWsMessage);
@@ -404,8 +393,8 @@ export default function PairedDeviceList({
       selectPaired(p);
     };
 
-    window.addEventListener("smui.open-remote-device", handler as EventListener);
-    return () => window.removeEventListener("smui.open-remote-device", handler as EventListener);
+    window.addEventListener(EVT_OPEN_REMOTE_DEVICE, handler as EventListener);
+    return () => window.removeEventListener(EVT_OPEN_REMOTE_DEVICE, handler as EventListener);
   }, [paired]);
 
   // component is now non-visual — all pairing / signaling logic remains active

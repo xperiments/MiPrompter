@@ -1,5 +1,5 @@
 import React from "react";
-import type { ScreenInfo } from "../lib/presenter";
+import type { ScreenInfo } from "../../lib/presenter";
 
 export default function DisplayMini({
   screen,
@@ -10,7 +10,6 @@ export default function DisplayMini({
   selected?: boolean;
   onSelect: () => void;
 }) {
-  // miniature sizing (fit within 120x80)
   const maxW = 120;
   const maxH = 80;
   const aspect = Math.max(0.1, screen.width / (screen.height || 1));

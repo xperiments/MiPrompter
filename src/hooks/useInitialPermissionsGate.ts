@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useLocalStorage } from "./useLocalStorage";
+import { getBasicCameraStream, getAudioVideoStream } from "../lib/media-devices";
+import { INITIAL_PERMISSIONS_KEY, FORCE_SHOW_PERMISSION_OVERLAY, EVT_PERMISSIONS_UPDATED } from "../lib/keys";
 
 // Encapsulates the permission-overlay logic previously in App.tsx.
 // Returns a boolean to show the overlay and a gesture-primed click handler.
@@ -13,15 +15,13 @@ export function useInitialPermissionsGate() {
     let mounted = true;
     (async () => {
       try {
-        if (ls.getRaw("smui.forceShowPermissionOverlay") === "1") {
+        if (ls.getRaw(FORCE_SHOW_PERMISSION_OVERLAY) === "1") {
           if (!mounted) return;
           setShowOverlay(true);
           return;
         }
 
-        const alreadyAsked = Boolean(
-          ls.getRaw("smui.initialPermissionsRequested"),
-        );
+        const alreadyAsked = Boolean(ls.getRaw(INITIAL_PERMISSIONS_KEY));
         let micGranted = false;
         let camGranted = false;
         try {
@@ -52,8 +52,8 @@ export function useInitialPermissionsGate() {
 
     // pointerdown priming: identical behavior to the previous inline effect
     // in App — starts a permissions probe on first user gesture and marks
-    // `smui.initialPermissionsRequested` so we don't spam the prompt.
-    const key = "smui.initialPermissionsRequested";
+    // INITIAL_PERMISSIONS_KEY so we don't spam the prompt.
+    const key = INITIAL_PERMISSIONS_KEY;
     function onFirstGesture() {
       document.removeEventListener("pointerdown", onFirstGesture, true);
 
@@ -79,7 +79,7 @@ export function useInitialPermissionsGate() {
           p = undefined;
         }
         if (p == null || p.state === "prompt") {
-          navigator.mediaDevices.getUserMedia({ video: true }).catch(() => {});
+          getBasicCameraStream().catch(() => {});
         }
       })();
 
@@ -96,7 +96,7 @@ export function useInitialPermissionsGate() {
 
       Promise.allSettled([micPromise, screenPromise])
         .then(() => {
-          window.dispatchEvent(new Event("smui.permissions-updated"));
+          window.dispatchEvent(new Event(EVT_PERMISSIONS_UPDATED));
         })
         .catch(() => {});
     }
@@ -116,14 +116,11 @@ export function useInitialPermissionsGate() {
     const x = (e as any).clientX ?? window.innerWidth / 2;
     const y = (e as any).clientY ?? window.innerHeight / 2;
 
-    navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: true,
-    }) as Promise<MediaStream>;
+    getAudioVideoStream().catch(() => {});
 
     (window as any).getScreenDetails?.().catch(() => {});
 
-    ls.setRaw("smui.initialPermissionsRequested", "1");
+    ls.setRaw(INITIAL_PERMISSIONS_KEY, "1");
 
     const overlay = e.currentTarget as HTMLElement | null;
     if (overlay) {
@@ -146,7 +143,7 @@ export function useInitialPermissionsGate() {
     }
 
     setTimeout(() => {
-      window.dispatchEvent(new Event("smui.permissions-updated"));
+      window.dispatchEvent(new Event(EVT_PERMISSIONS_UPDATED));
 
       setShowOverlay(false);
     }, 250);

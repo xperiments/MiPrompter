@@ -1,6 +1,6 @@
 import React from "react";
 import DisplayMini from "./DisplayMini";
-import type { ScreenInfo } from "../lib/presenter";
+import type { ScreenInfo } from "../../lib/presenter";
 
 type PairedDevice = {
   id: string;

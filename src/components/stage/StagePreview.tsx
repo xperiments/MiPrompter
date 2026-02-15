@@ -1,7 +1,7 @@
 import React from "react";
-import Icon from "./Icon";
+import Icon from "../Icon";
 import StageSourceChip, { type StagePlacedSource } from "./StageSourceChip";
-import type { ScreenInfo } from "../lib/presenter";
+import type { ScreenInfo } from "../../lib/presenter";
 
 type Props = {
   centerContainerRef: React.RefObject<HTMLDivElement>;
@@ -65,24 +65,6 @@ export default function StagePreview({
           onDrop={onDrop}
         >
           {/* Stage content (preview surface) */}
-          <div className="absolute left-4 top-4 flex items-center gap-3">
-            <div className="flex items-center gap-2 px-2 py-1 rounded-full bg-black/30 text-xs text-white/90">
-              <Icon name="monitor" width={14} height={14} />
-              <div className="whitespace-nowrap">{selectedScreen?.label}</div>
-            </div>
-
-            {selectedScreen?.isPrimary ? (
-              <div className="px-2 py-1 rounded-full bg-white/6 text-xs text-white/80">Primary</div>
-            ) : null}
-
-            <div className="ml-2 px-2 py-1 rounded-full bg-white/6 text-xs text-white/80">{`${Math.round(
-              targetW,
-            )}×${Math.round(targetH)}`}</div>
-
-            <div className="ml-2 px-2 py-1 rounded-full bg-white/6 text-xs text-white/80">
-              {stageSources.length} source{stageSources.length !== 1 ? "s" : ""}
-            </div>
-          </div>
 
           {/* Center overlay to simulate the prompter surface */}
           <div className="absolute inset-0 flex items-center justify-center text-white/20 text-6xl font-semibold select-none">
@@ -96,7 +78,6 @@ export default function StagePreview({
                 key={p.sourceId}
                 placed={p}
                 cameraPermission={cameraPermission}
-
                 localStreams={localStreams}
                 onRemove={() => onRemoveStageSource(p.sourceId)}
               />

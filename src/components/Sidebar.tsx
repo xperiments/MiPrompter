@@ -23,6 +23,7 @@ import {
   usePresenterSync,
   updatePresenterWindow,
 } from "../hooks/usePresenterSync";
+import { APPEARANCE_STORAGE_KEY, SCRIPTS_STORAGE_KEY, VOICE_COMMANDS_KEY, EVT_OPEN_SIDEBAR_SECTION } from "../lib/keys";
 
 /* extracted sidebar subcomponents */
 import ScriptsSection from "./sidebar/ScriptsSection";
@@ -74,16 +75,16 @@ export interface SidebarProps {
   isSpeechOnDeviceAvailable?: (lang?: string) => boolean;
   voiceCommands?: {
     wakeWord: string;
-    requireWakeWord?: boolean;
+    requireWakeWord: boolean;
 
     retry: string;
     restart: string;
   } | null;
-  setVoiceCommands?: (v: SidebarProps["voiceCommands"] | null) => void;
+  setVoiceCommands?: React.Dispatch<React.SetStateAction<NonNullable<SidebarProps["voiceCommands"]>>>;
 }
 
 export function Sidebar(props: SidebarProps) {
-  const patchAppearance = useUiStore((state) => state.patchAppearance);
+  const patchAppearance = useUiStore((state: any) => state.patchAppearance);
   const [lastDevice, setLastDevice] = React.useState<string | null>(null);
   // Custom hooks for device management
   const screens = useScreenDetection();
@@ -148,9 +149,7 @@ export function Sidebar(props: SidebarProps) {
 
   // Allow other UI to request a sidebar section to open (used when selecting devices)
   const openSidebarSection = (title: string) => {
-    window.dispatchEvent(
-      new CustomEvent("smui.open-sidebar-section", { detail: { title } }),
-    );
+    window.dispatchEvent(new CustomEvent(EVT_OPEN_SIDEBAR_SECTION, { detail: { title } }));
   };
 
   // Sync presenter with active script
@@ -165,7 +164,7 @@ export function Sidebar(props: SidebarProps) {
 
   // Memoize presenter config from localStorage
   const presenter = useMemo(() => {
-    const stored = ls.getJSON<Record<string, any>>("smui.appearance.v1", null);
+    const stored = ls.getJSON<Record<string, any>>(APPEARANCE_STORAGE_KEY, null);
     if (stored) return stored.presenter || {};
     return props.appearance?.presenter || {};
   }, [props.appearance, ls]);
@@ -290,9 +289,9 @@ export function Sidebar(props: SidebarProps) {
   const handleVoiceCommandsChange = React.useCallback(
     (patch: Partial<NonNullable<SidebarProps["voiceCommands"]>>) => {
       const next = { ...(props.voiceCommands ?? {}), ...patch };
-      props.setVoiceCommands?.(next);
+      props.setVoiceCommands?.(next as NonNullable<SidebarProps["voiceCommands"]>);
 
-      ls.setJSON("smui.voiceCommands.v1", next);
+      ls.setJSON(VOICE_COMMANDS_KEY, next);
 
       // Notify presenter window (non-fatal)
       props.send?.({ type: "presenter-voice-commands", config: next });
@@ -446,7 +445,7 @@ export function Sidebar(props: SidebarProps) {
   // Export scripts handler
   const handleExportScripts = useCallback(async () => {
     try {
-      const raw = ls.getRaw("smui.scripts.v1") ?? "[]";
+      const raw = ls.getRaw(SCRIPTS_STORAGE_KEY) ?? "[]";
       const blob = new Blob([raw], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -473,10 +472,10 @@ export function Sidebar(props: SidebarProps) {
         const parsed = JSON.parse(txt) as ScriptDoc[];
         if (!Array.isArray(parsed)) throw new Error("Invalid script file");
 
-        ls.setJSON("smui.scripts.v1", parsed);
+        ls.setJSON(SCRIPTS_STORAGE_KEY, parsed);
 
         const { idbSet } = await import("../lib/db");
-        await idbSet("smui.scripts.v1", parsed);
+        await idbSet(SCRIPTS_STORAGE_KEY, parsed);
 
         window.location.reload();
       } catch {
@@ -1130,7 +1129,7 @@ function MicrophoneSelect(props: {
       onSelect={(id) => {
         props.onChange(id);
         window.dispatchEvent(
-          new CustomEvent("smui.open-sidebar-section", {
+          new CustomEvent(EVT_OPEN_SIDEBAR_SECTION, {
             detail: { title: "Display Options" },
           }),
         );

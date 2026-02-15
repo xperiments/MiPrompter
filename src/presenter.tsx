@@ -2,6 +2,8 @@ import React, { useMemo, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { useWindowMessages } from "./lib/window-message";
 import Icon from "./components/Icon";
+import { PRESENTER_PAIR_ID } from "./lib/keys";
+import { getScreenStream } from "./lib/media-devices";
 
 // --- Types ---
 type ScriptChapter = { id: string; text: string };
@@ -756,7 +758,7 @@ function Presenter() {
       if (stopped) return;
       reconnectAttempts += 1;
       const delay = Math.min(1000 * Math.pow(2, Math.max(0, reconnectAttempts - 1)), 30000);
-      console.debug(`Presenter: scheduling WS reconnect in ${delay}ms (attempt ${reconnectAttempts})`);
+
       reconnectTimer = window.setTimeout(() => connect(), delay) as unknown as number;
     };
 
@@ -785,7 +787,7 @@ function Presenter() {
         // the pair id so reconnects announce the same device id.
         try {
           if (!window.opener) {
-            const storageKey = "smui.presenterPairId";
+            const storageKey = PRESENTER_PAIR_ID;
             let id: string | null = null;
             try {
               id = localStorage.getItem(storageKey);
@@ -814,7 +816,7 @@ function Presenter() {
 
             ws?.send(JSON.stringify(payload));
             try { (window as any).__smui_presenterPairId = id; } catch (_) {}
-            console.debug("Presenter: announced pair-request (persistent id)", id);
+
           }
         } catch (_) {
           /* ignore */
@@ -838,7 +840,7 @@ function Presenter() {
           // controller probe -> re-announce pair (helps controller reloads)
           try {
             if (msg.data?.type === "presenter-probe") {
-              const storageKey = "smui.presenterPairId";
+              const storageKey = PRESENTER_PAIR_ID;
               let id: string | null = null;
               try { id = localStorage.getItem(storageKey); } catch (_) { id = null; }
               if (!id) {
@@ -847,7 +849,7 @@ function Presenter() {
               }
               const payload = { type: "pair-request", id, info: { ua: navigator.userAgent, screen: { width: window.screen?.width || 0, height: window.screen?.height || 0 }, origin: "presenter" } } as any;
               try { ws?.send(JSON.stringify(payload)); } catch (_) {}
-              console.debug("Presenter: responded to presenter-probe", id);
+
               return;
             }
           } catch (_) {
@@ -977,7 +979,7 @@ function Presenter() {
       });
 
       ws.addEventListener("close", (ev) => {
-        console.debug("Presenter WS closed", ev?.reason || ev);
+
         cleanup();
         if (!stopped) scheduleReconnect();
       });
@@ -1206,9 +1208,7 @@ function Presenter() {
             });
 
             // Step 5: Get display stream
-            const displayStream = await (
-              navigator.mediaDevices as any
-            ).getDisplayMedia({ video: true });
+            const displayStream = await getScreenStream();
             console.log("[presenter] Got display stream");
 
             const pc = new RTCPeerConnection({

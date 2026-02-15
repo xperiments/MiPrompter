@@ -28,6 +28,8 @@ export type PresenterAppearance = {
   fontSize: number;
   // Selected font-family (e.g. 'Inter') — applied in presenter
   fontFamily?: string;
+  // Selected video input device id (deviceId) — undefined/null means None
+  videoDeviceId?: string | null;
   lineSpacing: number;
   paragraphSpacing: number;
   sideMargins: number;

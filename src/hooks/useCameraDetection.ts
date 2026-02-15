@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { getCameraStream, getBasicCameraStream, getOptimalVideoConstraints } from "../lib/media-devices";
 
 export interface CameraInfo {
   deviceId: string;
@@ -6,7 +7,7 @@ export interface CameraInfo {
   groupId?: string;
 }
 
-const CAM_STORAGE_KEY = "smui.video.input";
+import { CAM_STORAGE_KEY, EVT_PERMISSIONS_UPDATED } from "../lib/keys";
 import { lsGet, lsSet, lsRemove } from "../lib/local-storage";
 function getStoredCam(): string | null {
   return lsGet(CAM_STORAGE_KEY);
@@ -40,6 +41,7 @@ export function useCameraDetection() {
   const storedRef = useRef<string | null>(getStoredCam());
 
   async function detectCameras() {
+    
     setError(null);
     setLoading(true);
     try {
@@ -47,15 +49,16 @@ export function useCameraDetection() {
         throw new Error("MediaDevices API not available");
       let inputs = await enumerateCameras();
 
+      
+
       // If labels are empty and permission is granted, try to prompt briefly to resolve deviceIds
       const looksLikeDefaultOnly = (arr: CameraInfo[]) =>
         arr.length === 1 &&
         (arr[0].deviceId === "default" || arr[0].deviceId === "") &&
         !arr[0].label;
+
       if (looksLikeDefaultOnly(inputs) && permission === "granted") {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-        });
+        const stream = selectedCameraId ? await getCameraStream(selectedCameraId) : await getBasicCameraStream();
         stream.getTracks().forEach((t) => t.stop());
         // re-enumerate
         for (let i = 0; i < 3; i++) {
@@ -75,6 +78,41 @@ export function useCameraDetection() {
         setError("No cameras found");
       } else {
         setCameras(mapped);
+
+        // If no stored preference and permission granted, probe each camera and
+        // auto-select the one with the highest reported/ideal resolution.
+        // This is conservative and only runs when we don't already have a saved
+        // device or an explicit selection.
+        if (!selectedCameraId && !storedRef.current && permission === "granted") {
+          (async () => {
+            try {
+              let bestId: string | null = null;
+              let bestScore = 0;
+
+              for (const cam of mapped) {
+                try {
+                  const c = await getOptimalVideoConstraints(cam.deviceId);
+                  const w = (c.width as any)?.ideal ?? (c.width as any) ?? 0;
+                  const h = (c.height as any)?.ideal ?? (c.height as any) ?? 0;
+                  const score = (Number(w) || 0) * (Number(h) || 0);
+                  if (score > bestScore) {
+                    bestScore = score;
+                    bestId = cam.deviceId;
+                  }
+                } catch (_) {
+                  // ignore probe errors for individual devices
+                }
+              }
+
+              if (bestId) {
+                setSelectedCameraId(bestId);
+              }
+            } catch (_) {
+              /* ignore */
+            }
+          })();
+        }
+
         // Auto-select stored if present
         if (!selectedCameraId && storedRef.current) {
           const found = mapped.find(
@@ -95,7 +133,7 @@ export function useCameraDetection() {
     if (permission === "granted") return true;
     try {
       setLoading(true);
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const stream = await getBasicCameraStream();
       stream.getTracks().forEach((t) => t.stop());
       setPermission("granted");
       await detectCameras();
@@ -112,9 +150,7 @@ export function useCameraDetection() {
   async function testCamera(deviceId?: string): Promise<boolean> {
     setLoading(true);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: deviceId ? { deviceId: { exact: deviceId } } : true,
-      });
+      const stream = deviceId ? await getCameraStream(deviceId) : await getBasicCameraStream();
       stream.getTracks().forEach((t) => t.stop());
       setPermission("granted");
       await detectCameras();
@@ -139,7 +175,7 @@ export function useCameraDetection() {
     function handleDeviceChange() {
       detectCameras();
     }
-    window.addEventListener("smui.permissions-updated", detectCameras);
+    window.addEventListener(EVT_PERMISSIONS_UPDATED, detectCameras);
 
     navigator.mediaDevices?.addEventListener?.(
       "devicechange",
@@ -147,7 +183,7 @@ export function useCameraDetection() {
     );
 
     return () => {
-      window.removeEventListener("smui.permissions-updated", detectCameras);
+      window.removeEventListener(EVT_PERMISSIONS_UPDATED, detectCameras);
 
       navigator.mediaDevices?.removeEventListener?.(
         "devicechange",

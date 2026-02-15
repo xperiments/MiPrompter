@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { lsSetJSON } from "../lib/local-storage";
 import { AppearanceSettings } from "../types";
+import { APPEARANCE_STORAGE_KEY } from "../lib/keys";
 
 export const DEFAULT_APPEARANCE: AppearanceSettings = {
   editor: {
@@ -52,7 +53,7 @@ export const useUiStore = create<UiStore>((set: any) => ({
   patchAppearance: (p: Partial<AppearanceSettings>) =>
     set((s: any) => {
       const next = { ...s.appearance, ...p };
-      lsSetJSON("smui.appearance.v1", next);
+      lsSetJSON(APPEARANCE_STORAGE_KEY, next);
       return { appearance: next };
     }),
 }));

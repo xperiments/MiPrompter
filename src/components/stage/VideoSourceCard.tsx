@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
-import { usePresenterBridge } from "../hooks/usePresenterBridge";
-import type { CameraInfo } from "../hooks/useCameraDetection";
-import type { ScreenInfo } from "../lib/presenter";
-import Icon from "./Icon";
+import { usePresenterBridge } from "../../hooks/usePresenterBridge";
+import type { CameraInfo } from "../../hooks/useCameraDetection";
+import type { ScreenInfo } from "../../lib/presenter";
+import Icon from "../Icon";
+import { getCameraStream } from "../../lib/media-devices";
 
 export type VideoSource = {
   id: string;
@@ -38,8 +39,6 @@ export default function VideoSourceCard({
   const [previewRequested, setPreviewRequested] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
-
-
   useEffect(() => {
     let mounted = true;
     const cleanupVid = videoRef.current;
@@ -51,8 +50,7 @@ export default function VideoSourceCard({
       if (!cam?.deviceId) return;
 
       try {
-        console.debug("Composer: initPreview", cam.deviceId);
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: cam.deviceId } } });
+        const stream = await getCameraStream(cam.deviceId);
         if (!mounted) {
           stream.getTracks().forEach((t) => t.stop());
           return;
@@ -214,7 +212,6 @@ export default function VideoSourceCard({
       e.preventDefault();
       return;
     }
-    // visual feedback: show grabbing cursor while dragging
     try { e.currentTarget.classList.add("cursor-grabbing"); } catch (_) {}
     e.dataTransfer.setData("application/x-teleprompter-source", source.id);
     e.dataTransfer.effectAllowed = "copy";
@@ -227,7 +224,6 @@ export default function VideoSourceCard({
 
   const camDevId = source.kind === "camera" ? (source.raw as CameraInfo).deviceId : undefined;
 
-  // Minimal filmstrip card: only video + overlapping device name; no borders/buttons/type text
   return (
     <div
       draggable={source.available}
@@ -237,7 +233,6 @@ export default function VideoSourceCard({
       className={`flex-shrink-0 min-w-[200px] w-56 h-36 relative overflow-hidden rounded-sm ${!source.available ? "opacity-40 cursor-not-allowed" : "cursor-grab"}`}
       aria-label={`Video source ${source.label}`}
     >
-      {/* video / snapshot (fills the card) */}
       <video
         ref={videoRef}
         autoPlay
@@ -249,19 +244,16 @@ export default function VideoSourceCard({
         ].join(" ")}
       />
 
-      {/* presenter snapshot fallback */}
       {!hasPreview && presenterSnapshot ? (
         <img src={presenterSnapshot} alt="presenter snapshot" className="absolute inset-0 w-full h-full object-cover" />
       ) : null}
 
-      {/* empty-state icon when no preview available */}
       {!hasPreview && !presenterSnapshot ? (
         <div className="absolute inset-0 flex items-center justify-center text-white/60 bg-black/10">
           <Icon name="camera" width={28} height={28} />
         </div>
       ) : null}
 
-      {/* device label overlapping the video */}
       <div className="absolute left-2 bottom-2 px-2 py-1 rounded bg-black/40 text-xs text-white truncate pointer-events-none">
         {source.label}
       </div>

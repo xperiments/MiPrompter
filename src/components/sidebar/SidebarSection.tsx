@@ -1,11 +1,12 @@
 import React, { useState, useMemo } from "react";
 import Icon from "../Icon";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
+import { sidebarSectionKey } from "../../lib/keys";
 
 export function SidebarSection(props: { icon?: string; title: string; defaultOpen?: boolean; storageKey?: string; forceOpen?: boolean; children: React.ReactNode }) {
   const storageKey = useMemo(() => {
     const id = props.storageKey ?? props.title.replace(/\s+/g, "-").toLowerCase();
-    return `smui.sidebar.${encodeURIComponent(id)}.open`;
+    return sidebarSectionKey(id);
   }, [props.storageKey, props.title]);
 
   const ls = useLocalStorage();

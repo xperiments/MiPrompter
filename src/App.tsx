@@ -19,7 +19,7 @@ import { useScreenDetection } from "./hooks/useScreenDetection";
 import { useAppSpeechControl } from "./hooks/useAppSpeechControl"; // New Hook
 import { hasPresenterWsSender } from "./lib/presenter-transport";
 
-const APPEARANCE_STORAGE_KEY = "smui.appearance.v1";
+import { APPEARANCE_STORAGE_KEY, INITIAL_PERMISSIONS_KEY, FORCE_SHOW_PERMISSION_OVERLAY, SPEECH_LANGUAGE_KEY, VOICE_COMMANDS_KEY, SCREEN_STORAGE_KEY, EVT_PERMISSIONS_UPDATED } from "./lib/keys";
 
 export default function App() {
   const {
@@ -152,13 +152,13 @@ export default function App() {
   // App-side Speech State (Controlled by UI)
   const [micActive, setMicActive] = useState(false);
   const [speechLanguage, setSpeechLanguage] = useLocalStorageState<string>(
-    "smui.speechLanguage.v1",
+    SPEECH_LANGUAGE_KEY,
     "es-ES",
   ); // persisted
 
   // Voice command configuration (persisted)
   const [voiceCommands, setVoiceCommands] = useLocalStorageState(
-    "smui.voiceCommands.v1",
+    VOICE_COMMANDS_KEY,
     {
       wakeWord: "Siri",
       requireWakeWord: true,
@@ -608,7 +608,7 @@ export default function App() {
     React.useState<boolean>(false);
 
   function hidePermissionOverlay() {
-    ls.setRaw("smui.initialPermissionsRequested", "1");
+    ls.setRaw(INITIAL_PERMISSIONS_KEY, "1");
 
     setShowPermissionOverlay(false);
   }
@@ -621,15 +621,13 @@ export default function App() {
       try {
         // dev override for testing
 
-        if (ls.getRaw("smui.forceShowPermissionOverlay") === "1") {
+        if (ls.getRaw(FORCE_SHOW_PERMISSION_OVERLAY) === "1") {
           if (!mounted) return;
           setShowPermissionOverlay(true);
           return;
         }
 
-        const alreadyAsked = Boolean(
-          ls.getRaw("smui.initialPermissionsRequested"),
-        );
+        const alreadyAsked = Boolean(ls.getRaw(INITIAL_PERMISSIONS_KEY));
         let micGranted = false;
         try {
           const p = await (navigator.permissions as any).query?.({
@@ -704,7 +702,7 @@ export default function App() {
     setTimeout(() => {
       hidePermissionOverlay();
 
-      window.dispatchEvent(new Event("smui.permissions-updated"));
+      window.dispatchEvent(new Event(EVT_PERMISSIONS_UPDATED));
     }, 250);
   }
 
@@ -716,7 +714,7 @@ export default function App() {
     // otherwise fall back to the primary screen.
     const persisted = (() => {
       try {
-        return ls.getRaw("smui.presenter.targetScreen");
+        return ls.getRaw(SCREEN_STORAGE_KEY);
       } catch {
         return null;
       }
@@ -1230,8 +1228,6 @@ export default function App() {
                   // focus the source (split) chapter in the editor so user stays in context
                   scriptAreaRef.current?.focusChapter(chapterId);
                 } catch (err) {
-                  // previously intentionally empty — now logged for visibility
-                  console.debug("[auto] swallowed error", err);
                 } finally {
                   setCtx((p) => ({ ...p, open: false }));
                 }

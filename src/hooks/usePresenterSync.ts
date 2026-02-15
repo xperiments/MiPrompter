@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import type { ScriptDoc, PresenterAppearance } from "../types";
 import { sendToPresenterViaWs } from "../lib/presenter-transport";
+import { EVT_WS_READY } from "../lib/keys";
 
 export interface UsePresenterSyncParams {
   presenterWindowRef?: React.RefObject<Window | null>;
@@ -60,7 +61,7 @@ export function usePresenterSync({
     send,
   ]);
 
-  // Re-send current presenter state when a WS sender becomes available (smui.ws-ready)
+  // Re-send current presenter state when a WS sender becomes available
   useEffect(() => {
     function onWsReady() {
       const win = presenterWindowRef?.current ?? null;
@@ -85,7 +86,7 @@ export function usePresenterSync({
       sendToPresenterViaWs(msgParams);
     }
 
-    window.addEventListener("smui.ws-ready", onWsReady as EventListener);
+    window.addEventListener(EVT_WS_READY, onWsReady as EventListener);
 
     // If a WS sender is already registered (race avoidance), trigger resync immediately
     try {
@@ -93,16 +94,18 @@ export function usePresenterSync({
       // (we import from presenter-transport at top of file already) — use the exported helper
       // `hasPresenterWsSender` to detect current registration state.
       // If registered, call onWsReady() so presenters that joined earlier still receive state.
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { hasPresenterWsSender } = require("../lib/presenter-transport");
-      if (typeof hasPresenterWsSender === "function" && hasPresenterWsSender()) {
-        onWsReady();
-      }
+      import("../lib/presenter-transport")
+        .then((m) => {
+          if (typeof m.hasPresenterWsSender === "function" && m.hasPresenterWsSender()) {
+            onWsReady();
+          }
+        })
+        .catch(() => {});
     } catch (_) {
       /* ignore */
     }
 
-    return () => window.removeEventListener("smui.ws-ready", onWsReady as EventListener);
+    return () => window.removeEventListener(EVT_WS_READY, onWsReady as EventListener);
   }, [activeScriptId, scripts, presenterWindowRef, send]);
 }
 

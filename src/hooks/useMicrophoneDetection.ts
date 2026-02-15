@@ -6,7 +6,7 @@ export interface MicrophoneInfo {
   groupId?: string;
 }
 
-const MIC_STORAGE_KEY = 'smui.audio.input';
+import { MIC_STORAGE_KEY, EVT_PERMISSIONS_UPDATED } from '../lib/keys';
 
 import { lsGet, lsSet, lsRemove } from '../lib/local-storage';
 
@@ -121,7 +121,6 @@ export function useMicrophoneDetection() {
         arr.length === 1 && (arr[0].deviceId === 'default' || arr[0].deviceId === '') && !arr[0].label;
 
       if (looksLikeDefaultOnly(inputs) && permission === 'granted') {
-        console.debug('[useMicrophoneDetection] Resolving default-only device');
 
         try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -150,8 +149,6 @@ export function useMicrophoneDetection() {
         label: d.label || `Microphone — ${d.deviceId.slice(0, 6)}`,
         groupId: d.groupId,
       }));
-
-      console.debug('[useMicrophoneDetection] detectMics →', mapped);
 
       if (mapped.length === 0) {
         setMics([]);
@@ -243,7 +240,7 @@ export function useMicrophoneDetection() {
       detectMics();
     }
 
-    window.addEventListener('smui.permissions-updated', handlePermissionsUpdate);
+    window.addEventListener(EVT_PERMISSIONS_UPDATED, handlePermissionsUpdate);
     try {
       navigator.mediaDevices?.addEventListener?.('devicechange', handleDeviceChange as any);
     } catch {
@@ -251,7 +248,7 @@ export function useMicrophoneDetection() {
     }
 
     return () => {
-      window.removeEventListener('smui.permissions-updated', handlePermissionsUpdate);
+      window.removeEventListener(EVT_PERMISSIONS_UPDATED, handlePermissionsUpdate);
       try {
         navigator.mediaDevices?.removeEventListener?.('devicechange', handleDeviceChange as any);
       } catch {

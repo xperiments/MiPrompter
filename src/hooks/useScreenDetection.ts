@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import type { ScreenInfo } from "../lib/presenter";
 
-const SCREEN_STORAGE_KEY = "smui.presenter.targetScreen";
+import { SCREEN_STORAGE_KEY, EVT_PERMISSIONS_UPDATED } from "../lib/keys";
 
 import { lsGet, lsSet } from "../lib/local-storage";
 
@@ -154,15 +154,9 @@ export function useScreenDetection() {
       detectScreens();
     }
 
-    window.addEventListener(
-      "smui.permissions-updated",
-      handlePermissionsUpdate,
-    );
+    window.addEventListener(EVT_PERMISSIONS_UPDATED, handlePermissionsUpdate);
     return () => {
-      window.removeEventListener(
-        "smui.permissions-updated",
-        handlePermissionsUpdate,
-      );
+      window.removeEventListener(EVT_PERMISSIONS_UPDATED, handlePermissionsUpdate);
     };
   }, []);
 
